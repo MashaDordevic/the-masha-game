@@ -11,6 +11,9 @@ Try it out at: [https://themashagame.com/](https://themashagame.com/)
 
 ## How to develop the app?
 
+Install `yarn global add create-elm-app` first, use node v 16.20.0. 
+For functions: `npm install -g firebase-tools`
+
 Run the elm app with `elm-app start`, run `yarn css` to start sass compiler ,and run functions locally by going to the `functions` directory and running `yarn serve` (you need to rerun this command on change).
 
 ## How to publish the app?
