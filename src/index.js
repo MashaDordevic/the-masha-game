@@ -1,5 +1,5 @@
 import "./main.css";
-import { Elm } from "./Main.elm";
+import {Elm} from "./Main.elm";
 import * as serviceWorker from "./serviceWorker";
 import NoSleep from "nosleep.js";
 
@@ -17,16 +17,17 @@ document.addEventListener("touchstart", enableNoSleep, false);
 const LOCAL_STORAGE_KEY = "TheMashaGame.username";
 
 // Your web app's Firebase configuration
-var firebaseConfig = {
-  apiKey: "AIzaSyA_Hv4Deh_usUCTACNLESTxpyM4QHWfv58",
-  authDomain: "themashagame-990a8.firebaseapp.com",
-  databaseURL: "https://themashagame-990a8.firebaseio.com",
-  projectId: "themashagame-990a8",
-  storageBucket: "themashagame-990a8.appspot.com",
-  messagingSenderId: "616742583607",
-  appId: "1:616742583607:web:cae493ca4fc3a05e98eeb2",
-  measurementId: "G-5NL1EL32WM",
+const firebaseConfig = {
+    apiKey: "AIzaSyA_Hv4Deh_usUCTACNLESTxpyM4QHWfv58",
+    authDomain: "themashagame-990a8.firebaseapp.com",
+    databaseURL: "https://themashagame-990a8.firebaseio.com",
+    projectId: "themashagame-990a8",
+    storageBucket: "themashagame-990a8.appspot.com",
+    messagingSenderId: "616742583607",
+    appId: "1:616742583607:web:cae493ca4fc3a05e98eeb2",
+    measurementId: "G-5NL1EL32WM"
 };
+
 // Initialize Firebase
 firebase.initializeApp(firebaseConfig);
 const database = firebase.database();
