@@ -12,7 +12,7 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  margin: 0 32px 32px 0;
+  margin: 0 16px 16px 0;
   font-size: 40px;
   color: black;
 
@@ -23,6 +23,7 @@
   @media (min-width: $breakpointMedium) {
     top: 50px;
     right: 70px;
+    margin: 0 32px 32px 0;
   }
 }
 
@@ -36,9 +37,13 @@
   left: 0;
   box-sizing: border-box;
   background-color: var(--background-color);
-  padding: 52px 25px;
+  padding: 24px 16px;
   display: flex;
   flex-direction: column;
+
+  @media (min-width: $breakpointTiny) {
+    padding: 52px 25px;
+  }
 }
 
 .help-dialog-content {
@@ -46,7 +51,7 @@
   background-color: var(--action-highlight);
   border-radius: 12px;
   flex: 1;
-  padding: 32px 28px;
+  padding: 32px 20px;
   color: black;
   // font-family: "Open Sans Condensed", sans-serif;
   // font-weight: 300;

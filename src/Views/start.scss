@@ -28,13 +28,19 @@
 
 .title-large {
   font-family: "Bangers", cursive;
-  font-size: 48px;
+  font-size: 42px;
   margin: 8px 0 40px 0;
+
+  @media (min-width: $breakpointTiny) {
+    font-size: 48px;
+  }
 }
 
 .create-btn {
   align-self: stretch;
   height: 80px;
+  padding-right: 24px;
+  padding-left: 24px;
 
   background: #a2f294;
   color: var(--background-color);
@@ -80,7 +86,8 @@
 }
 
 .join {
-  width: 327px;
+  width: 100%;
+  max-width: 327px;
   height: 219px;
   background: var(--text-overlay);
   border-radius: 12px;
@@ -116,6 +123,7 @@
 
   overflow: hidden;
   min-width: 0; /* new; needed for FF */
+  width: 100%;
 
   margin-top: 0px;
 

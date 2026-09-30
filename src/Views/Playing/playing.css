@@ -33,7 +33,7 @@
   display: grid;
   grid-template-columns: 35% 30% 35%;
   margin-top: 4px;
-  padding: 14px 24px;
+  padding: 14px 16px;
   min-width: 200px;
   background: #ffffff;
   align-items: center;
@@ -81,7 +81,7 @@
 
 .playing-now {
   max-width: 300px;
-  width: 300px; }
+  width: 100%; }
 
 .info-timer {
   color: white; }
@@ -121,7 +121,9 @@
 .playing-container {
   display: flex;
   flex-direction: column;
-  align-items: center; }
+  align-items: center;
+  max-width: 100%;
+  width: 100%; }
 
 .scoreboard-container {
   display: grid;
@@ -129,7 +131,8 @@
   max-width: 200px;
   color: black;
   max-width: 300px;
-  min-width: 300px;
+  min-width: 0;
+  width: 100%;
   padding: 24px 12px;
   position: relative; }
   .scoreboard-container h3 {
@@ -149,12 +152,11 @@
 
 .scoreboard-teams-container {
   grid-area: 2/1/3/1;
-  width: 300px; }
+  width: 100%; }
 
 .team-container {
   display: flex;
   align-items: center;
-  width: 300px;
   justify-content: space-between;
   width: 100%;
   box-sizing: border-box;

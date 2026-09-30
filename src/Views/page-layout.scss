@@ -11,17 +11,16 @@
   align-items: center;
   justify-content: center;
   background-color: var(--background-color);
+  min-width: 0;
+  width: 100%;
 
-  @media (max-width: $breakpointTiny) {
-    min-width: min-content;
-  }
   @media (min-width: $breakpointMedium) {
     flex-direction: row;
   }
 }
 
 .page-container {
-  padding: 25px 25px 160px;
+  padding: 25px 16px 128px;
 
   display: flex;
   flex-direction: column;
@@ -35,6 +34,9 @@
 
   flex-wrap: wrap;
 
+  @media (min-width: $breakpointTiny) {
+    padding: 25px 25px 160px;
+  }
   @media (min-width: $breakpointMedium) {
     padding: 52px 25px 160px;
   }
@@ -46,11 +48,20 @@
 .title {
   font-family: "Bangers", cursive;
   font-size: 32px;
-  margin: 8px 12px 40px 12px;
+  margin: 8px 8px 40px;
+
+  @media (min-width: $breakpointTiny) {
+    margin-right: 12px;
+    margin-left: 12px;
+  }
 }
 
 .confetti-large {
-  font-size: 32px;
+  font-size: 24px;
+
+  @media (min-width: $breakpointTiny) {
+    font-size: 32px;
+  }
 }
 
 .debugger {
