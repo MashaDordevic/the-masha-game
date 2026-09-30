@@ -55,6 +55,19 @@ export const games = {
     database
       .ref(`${GAMES_PATH}/${gameId}/participants/players/${userId}`)
       .remove(),
+  setOwner: (gameId: string, playerIds: string[], ownerId: string) => {
+    const ownerUpdates = playerIds.reduce<Record<string, boolean>>(
+      (updates, playerId) => ({
+        ...updates,
+        [`${playerId}/isOwner`]: playerId === ownerId,
+      }),
+      {}
+    );
+
+    return database
+      .ref(`${GAMES_PATH}/${gameId}/participants/players`)
+      .update(ownerUpdates);
+  },
   update: (game: any) => database.ref(`${GAMES_PATH}/${game.id}`).set(game),
   ref: database.ref(GAMES_PATH),
   gameRef: (id: string) => database.ref(`${GAMES_PATH}/${id}`),
