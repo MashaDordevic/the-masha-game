@@ -25,8 +25,8 @@ newlyStartedGame game =
     { game | status = Game.Status.Running, participants = Participants testPlayers6 Dict.empty, state = defaultTestState, defaultTimer = 60 }
 
 
-restartWords : Game -> Game
-restartWords game =
+restartWordsToFixture : Game -> Game
+restartWordsToFixture game =
     let
         oldState =
             game.state

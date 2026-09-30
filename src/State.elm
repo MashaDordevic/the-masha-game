@@ -96,6 +96,7 @@ type Msg
     | DebugSetPlayerOwner
     | DebugSetNextPlayer
     | DebugGuessNextWords
+    | DebugSetRound Int
     | GameFound (Result Http.Error Game)
     | GameAdded (Result Http.Error ( Game, Player ))
     | JoinedGame (Result Http.Error JoinedGameInfo)

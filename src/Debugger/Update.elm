@@ -1,12 +1,13 @@
 module Debugger.Update exposing (..)
 
 import Dict
-import Fixtures.Game exposing (emptyGame, getPlayerOnTurn, guessNextWords, lobbyGame, newlyStartedGame, restartWords)
+import Fixtures.Game exposing (emptyGame, getPlayerOnTurn, guessNextWords, lobbyGame, newlyStartedGame, restartWordsToFixture)
 import Game.Game exposing (Game)
 import Game.Teams exposing (advanceCurrentTeam)
 import Maybe exposing (withDefault)
 import Player exposing (Player)
 import State exposing (GameModel(..), LocalUser(..), Model, Msg(..), PlayingGameModel)
+import Game.Words exposing (restartWords)
 
 
 upadateGame : PlayingGameModel -> Game -> GameModel
@@ -68,7 +69,7 @@ update msg model =
                     ( { model | currentGame = upadateGame gameModel (newlyStartedGame gameModel.game) }, Cmd.none )
 
                 DebugRestartWords ->
-                    ( { model | currentGame = upadateGame gameModel (restartWords gameModel.game) }, Cmd.none )
+                    ( { model | currentGame = upadateGame gameModel (restartWordsToFixture gameModel.game) }, Cmd.none )
 
                 DebugSetNextPlayer ->
                     let
@@ -111,6 +112,16 @@ update msg model =
 
                 DebugGuessNextWords ->
                     ( { model | currentGame = upadateGame gameModel (guessNextWords gameModel.game) }, Cmd.none )
+
+                DebugSetRound newRound ->
+                    let
+                        oldState = gameModel.game.state
+                        newWords = restartWords oldState.words
+                        newState = { oldState | words = newWords, round = newRound }
+                        oldGame = gameModel.game
+                        newGame = { oldGame | state = newState }
+                    in
+                    ( { model | currentGame = upadateGame gameModel newGame }, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )

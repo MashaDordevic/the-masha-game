@@ -8,6 +8,7 @@ import Random
 import Random.List exposing (shuffle)
 
 
+
 type alias Word =
     { word : String
     , player : String
@@ -122,10 +123,19 @@ wordsEncoder words =
 restartWords : Words -> Words
 restartWords words =
     let
-        ( shuffledGuessedWords, _ ) =
-            Random.step (shuffle words.guessed) (Random.initialSeed 0)
+        currentWord =
+            case words.current of
+                Just word ->
+                    [ word ]
+
+                Maybe.Nothing ->
+                    []
+        allWords =
+            words.guessed ++ currentWord ++ words.next
+        ( shuffledWords, _ ) =
+            Random.step (shuffle allWords) (Random.initialSeed 0)
     in
-    Words [] Maybe.Nothing shuffledGuessedWords
+    Words [] Maybe.Nothing shuffledWords
 
 
 failCurrentWord : Words -> Words

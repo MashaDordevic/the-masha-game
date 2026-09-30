@@ -57,6 +57,24 @@ suite =
                 restartWords (Words wordsList Maybe.Nothing [])
                     |> sortWords
                     |> Expect.equal (Words [] Maybe.Nothing wordsList |> sortWords)
+        , test "restartWords includes the current and remaining words" <|
+            \_ ->
+                let
+                    guessedWord =
+                        Word "a" "player1" ""
+
+                    currentWord =
+                        Word "b" "player2" ""
+
+                    remainingWord =
+                        Word "c" "player1" ""
+                in
+                restartWords (Words [ guessedWord ] (Just currentWord) [ remainingWord ])
+                    |> sortWords
+                    |> Expect.equal
+                        (Words [] Maybe.Nothing [ guessedWord, currentWord, remainingWord ]
+                            |> sortWords
+                        )
         , test "failCurrentWord" <|
             \_ ->
                 failCurrentWord (Words [] (Just (Word "a" "player1" "")) [ Word "b" "player2" "", Word "c" "player1" "" ])
