@@ -6,6 +6,7 @@ import Game.Game exposing (Game)
 import Http
 import Json.Decode
 import Player exposing (Player)
+import Request
 import Route exposing (Route)
 import Time
 import Url
@@ -23,7 +24,14 @@ type LocalUser
 
 
 type alias PlayingGameModel =
-    { localUser : LocalUser, game : Game, isOwner : Bool, wordInput : String, turnTimer : Int, isBetweenRounds : Bool }
+    { localUser : LocalUser
+    , game : Game
+    , isOwner : Bool
+    , wordInput : String
+    , addWordRequest : Request.State String
+    , turnTimer : Int
+    , isBetweenRounds : Bool
+    }
 
 
 type alias InitialGameModel =
@@ -34,9 +42,9 @@ type alias InitialGameModel =
 
 type GameModel
     = Initial InitialGameModel
-    | CreatingGame { nameInput : String }
+    | CreatingGame { nameInput : String, request : Request.State String }
     | LoadingGameToJoin { nameInput : String }
-    | JoiningGame { game : Game, nameInput : String }
+    | JoiningGame { game : Game, nameInput : String, request : Request.State String }
     | Playing PlayingGameModel
 
 
@@ -103,6 +111,7 @@ type Msg
     | GameFound (Result Http.Error Game)
     | GameAdded (Result Http.Error ( Game, Player ))
     | JoinedGame (Result Http.Error JoinedGameInfo)
+    | WordAdded (Result Http.Error String)
     | AuthTokenChanged String
     | ReceivedUsernameFromLocalStorage String
     | NoOpResult (Result Http.Error String)

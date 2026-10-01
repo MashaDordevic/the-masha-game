@@ -14,6 +14,7 @@ import Game.Words exposing (Word)
 import Json.Decode
 import Json.Encode
 import Player exposing (Player, PlayerStatus(..))
+import Request
 import Route
 import State exposing (Flags, GameModel(..), LocalUser(..), Model, Msg(..))
 import String exposing (join)
@@ -79,7 +80,7 @@ init flags url navKey =
                     LoadingGameToJoin { nameInput = "" }
 
                 Route.Create ->
-                    CreatingGame { nameInput = "" }
+                    CreatingGame { nameInput = "", request = Request.idle }
 
                 _ ->
                     Initial { pinInput = "", instructionSlideNumber = 1 }
@@ -127,11 +128,26 @@ playingGameUpdate msg model =
                                 ( model, Cmd.none )
 
                             else
-                                let
-                                    newWord =
-                                        Game.Words.wordWithKey 0 (Word submittedWord localPlayer.name "")
-                                in
-                                ( { model | currentGame = Playing { gameModel | wordInput = "" } }, Api.addWord model.apiUrl model.authToken game.id newWord )
+                                case Request.begin gameModel.addWordRequest of
+                                    Just request ->
+                                        let
+                                            newWord =
+                                                Game.Words.wordWithKey 0 (Word submittedWord localPlayer.name "")
+                                        in
+                                        ( { model | currentGame = Playing { gameModel | addWordRequest = request } }
+                                        , Api.addWord model.apiUrl model.authToken game.id newWord
+                                        )
+
+                                    Nothing ->
+                                        ( model, Cmd.none )
+
+                        WordAdded result ->
+                            case result of
+                                Ok _ ->
+                                    ( { model | currentGame = Playing { gameModel | wordInput = "", addWordRequest = Request.succeed gameModel.addWordRequest } }, Cmd.none )
+
+                                Err _ ->
+                                    ( { model | currentGame = Playing { gameModel | addWordRequest = Request.fail "Could not add the word. Try again." gameModel.addWordRequest } }, Cmd.none )
 
                         State.DeleteWord id ->
                             ( model, Api.deleteWord model.apiUrl model.authToken game.id id )
@@ -337,7 +353,7 @@ update msg model =
                             )
 
                         SetCreatingGameMode ->
-                            ( { model | currentGame = CreatingGame { nameInput = "" } }, Nav.pushUrl model.navKey "create" )
+                            ( { model | currentGame = CreatingGame { nameInput = "", request = Request.idle } }, Nav.pushUrl model.navKey "create" )
 
                         UpdatePinInput input ->
                             ( { model | currentGame = Initial { pinInput = input, instructionSlideNumber = 1 } }, Cmd.none )
@@ -359,7 +375,7 @@ update msg model =
                         GameFound result ->
                             case result of
                                 Ok game ->
-                                    ( { model | currentGame = JoiningGame { game = game, nameInput = gameModel.nameInput } }
+                                    ( { model | currentGame = JoiningGame { game = game, nameInput = gameModel.nameInput, request = Request.idle } }
                                     , subscribeToGame
                                         (Json.Encode.object
                                             [ ( "userId", Json.Encode.null )
@@ -377,29 +393,34 @@ update msg model =
                 CreatingGame gameModel ->
                     case msg of
                         UpdateNameInput input ->
-                            ( { model | currentGame = CreatingGame { nameInput = String.toUpper input } }, Cmd.none )
+                            ( { model | currentGame = CreatingGame { gameModel | nameInput = String.toUpper input } }, Cmd.none )
 
                         AddGame ->
-                            if String.isEmpty gameModel.nameInput then
+                            if String.isEmpty (String.trim gameModel.nameInput) then
                                 ( model, Cmd.none )
 
                             else
-                                let
-                                    -- will be overwritten because the user doesn't have an ID yet
-                                    tempPlayer =
-                                        Player "" gameModel.nameInput Online True
+                                case Request.begin gameModel.request of
+                                    Just request ->
+                                        let
+                                            -- will be overwritten because the user doesn't have an ID yet
+                                            tempPlayer =
+                                                Player "" gameModel.nameInput Online True
 
-                                    newGame =
-                                        Game.Game.createGameModel tempPlayer
-                                in
-                                ( model
-                                , Api.addGame model.apiUrl model.authToken gameModel.nameInput newGame
-                                )
+                                            newGame =
+                                                Game.Game.createGameModel tempPlayer
+                                        in
+                                        ( { model | currentGame = CreatingGame { gameModel | request = request } }
+                                        , Api.addGame model.apiUrl model.authToken gameModel.nameInput newGame
+                                        )
+
+                                    Nothing ->
+                                        ( model, Cmd.none )
 
                         GameAdded result ->
                             case result of
                                 Ok ( game, player ) ->
-                                    ( { model | currentGame = Playing { game = game, isOwner = True, localUser = LocalPlayer player, wordInput = "", turnTimer = defaultTimer, isBetweenRounds = False } }
+                                    ( { model | currentGame = Playing { game = game, isOwner = True, localUser = LocalPlayer player, wordInput = "", addWordRequest = Request.idle, turnTimer = defaultTimer, isBetweenRounds = False } }
                                     , Cmd.batch
                                         [ subscribeToGame
                                             (Json.Encode.object
@@ -413,7 +434,7 @@ update msg model =
                                     )
 
                                 Err _ ->
-                                    ( model, Cmd.none )
+                                    ( { model | currentGame = CreatingGame { gameModel | request = Request.fail "Could not create the game. Try again." gameModel.request } }, Cmd.none )
 
                         _ ->
                             ( model, Cmd.none )
@@ -464,7 +485,7 @@ update msg model =
                                                         LocalWatcher watcher ->
                                                             watcher.name
                                             in
-                                            ( { model | currentGame = Playing { localUser = localUser, isOwner = isLocalPlayerOwner, game = joinedGameInfo.game, wordInput = "", turnTimer = defaultTimer, isBetweenRounds = False } }
+                                            ( { model | currentGame = Playing { localUser = localUser, isOwner = isLocalPlayerOwner, game = joinedGameInfo.game, wordInput = "", addWordRequest = Request.idle, turnTimer = defaultTimer, isBetweenRounds = False } }
                                             , Cmd.batch
                                                 [ subscribeToGame
                                                     (Json.Encode.object
@@ -477,13 +498,24 @@ update msg model =
                                             )
 
                                         Nothing ->
-                                            ( { model | errors = [ joinedGameInfo.status ] }, Cmd.none )
+                                            ( { model | currentGame = JoiningGame { gameModel | request = Request.fail joinedGameInfo.status gameModel.request } }, Cmd.none )
 
-                                _ ->
-                                    ( { model | errors = [ "Joining game error" ] }, Cmd.none )
+                                Err _ ->
+                                    ( { model | currentGame = JoiningGame { gameModel | request = Request.fail "Could not join the game. Try again." gameModel.request } }, Cmd.none )
 
                         JoinGame ->
-                            ( model, Api.joinGame model.apiUrl model.authToken gameModel.game.gameId gameModel.nameInput )
+                            if String.isEmpty (String.trim gameModel.nameInput) then
+                                ( model, Cmd.none )
+
+                            else
+                                case Request.begin gameModel.request of
+                                    Just request ->
+                                        ( { model | currentGame = JoiningGame { gameModel | request = request } }
+                                        , Api.joinGame model.apiUrl model.authToken gameModel.game.gameId gameModel.nameInput
+                                        )
+
+                                    Nothing ->
+                                        ( model, Cmd.none )
 
                         _ ->
                             ( model, Cmd.none )

@@ -3,10 +3,11 @@ module Views.AddingWords exposing (..)
 import Dict exposing (Dict)
 import Game.Game exposing (Game)
 import Game.Words
-import Html exposing (Html, button, div, form, h1, h3, input, label, span, text)
+import Html exposing (Html, button, div, form, h1, h3, input, label, p, span, text)
 import Html.Attributes exposing (attribute, class, disabled, for, id, placeholder, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Player exposing (Player)
+import Request
 import State exposing (LocalUser(..), Msg(..), PlayingGameModel)
 
 
@@ -88,8 +89,12 @@ localPlayersWords words localUser =
                 ]
 
 
-wordsInputView : Game -> Player -> String -> Html Msg
-wordsInputView game localUser inputValue =
+wordsInputView : Game -> Player -> String -> Request.State String -> Html Msg
+wordsInputView game localUser inputValue request =
+    let
+        isLoading =
+            Request.isLoading request
+    in
     div [ class "words-input-container" ]
         [ form [ class "word-entry-form", onSubmit AddWord ]
             [ label [ for "word" ] [ text "Word to add" ]
@@ -103,10 +108,23 @@ wordsInputView game localUser inputValue =
                 , placeholder "e.g. table, mango, nudist"
                 , value inputValue
                 , onInput UpdateWordInput
+                , disabled isLoading
                 ]
                 []
-            , button [ class "secondary", type_ "submit" ] [ text "Add" ]
+            , button
+                [ class "secondary"
+                , type_ "submit"
+                , disabled (isLoading || String.isEmpty (String.trim inputValue))
+                , attribute "aria-busy" (if isLoading then "true" else "false")
+                ]
+                [ text (if isLoading then "Adding…" else "Add") ]
             ]
+        , case Request.error request of
+            Just requestError ->
+                p [ class "error", attribute "role" "alert" ] [ text requestError ]
+
+            Nothing ->
+                text ""
         , localPlayersWords game.state.words localUser
         ]
 
@@ -117,7 +135,7 @@ addingWordsView model =
         wordsInput =
             case model.localUser of
                 LocalPlayer localPlayer ->
-                    wordsInputView model.game localPlayer model.wordInput
+                    wordsInputView model.game localPlayer model.wordInput model.addWordRequest
 
                 LocalWatcher _ ->
                     text ""

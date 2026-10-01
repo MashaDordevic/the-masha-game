@@ -5,6 +5,7 @@ import Debugger.Debugger exposing (debugger)
 import Game.Status
 import Html exposing (div, text)
 import Html.Attributes exposing (..)
+import Request
 import State exposing (..)
 import Views.AddingWords exposing (addingWordsView)
 import Views.BetweenRounds exposing (betweenRoundsView)
@@ -46,13 +47,13 @@ view model =
                                 finishedGameView gameModel.game
 
                     CreatingGame gameModel ->
-                        nameInputView gameModel.nameInput AddGame
+                        nameInputView gameModel.nameInput "Creating…" gameModel.request AddGame
 
                     LoadingGameToJoin gameModel ->
-                        nameInputView gameModel.nameInput JoinGame
+                        nameInputView gameModel.nameInput "Loading game…" Request.loading JoinGame
 
                     JoiningGame gameModel ->
-                        nameInputView gameModel.nameInput JoinGame
+                        nameInputView gameModel.nameInput "Joining…" gameModel.request JoinGame
 
                     Initial gameModel ->
                         startView gameModel model.errors

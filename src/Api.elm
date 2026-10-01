@@ -39,7 +39,7 @@ addWord apiUrl authToken gameId word =
                     [ ( "gameId", Json.Encode.string gameId )
                     , ( "word", wordEncoder word )
                     ]
-        , expect = Http.expectString NoOpResult
+        , expect = Http.expectString WordAdded
         , timeout = Nothing
         , tracker = Nothing
         }
