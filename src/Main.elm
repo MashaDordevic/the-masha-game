@@ -53,6 +53,9 @@ port getUsernameFromLocalStorage : () -> Cmd msg
 port receivedUsernameFromLocalStorage : (String -> msg) -> Sub msg
 
 
+port authTokenChanged : (String -> msg) -> Sub msg
+
+
 
 ---- MODEL ----
 
@@ -81,6 +84,7 @@ init flags url navKey =
                 _ ->
                     Initial { pinInput = "", instructionSlideNumber = 1 }
       , environment = flags.environment
+      , authToken = flags.authToken
       , apiUrl = apiUrl
       , errors = []
       , isHelpDialogOpen = False
@@ -236,7 +240,7 @@ playingGameUpdate msg model =
                                         ( model, copyInviteLink (Json.Encode.string game.gameId) )
 
                                     KickPlayer userId ->
-                                        ( model, Api.kickPlayer model.apiUrl userId game.id )
+                                        ( model, Api.kickPlayer model.apiUrl model.authToken userId game.id )
 
                                     StartGame ->
                                         let
@@ -285,6 +289,9 @@ playingGameUpdate msg model =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        AuthTokenChanged authToken ->
+            ( { model | authToken = authToken }, Cmd.none )
+
         ToggleHelpDialog ->
             ( { model | isHelpDialogOpen = not model.isHelpDialogOpen }, Cmd.none )
 
@@ -380,7 +387,7 @@ update msg model =
                                         Game.Game.createGameModel tempPlayer
                                 in
                                 ( model
-                                , Api.addGame model.apiUrl gameModel.nameInput newGame
+                                , Api.addGame model.apiUrl model.authToken gameModel.nameInput newGame
                                 )
 
                         GameAdded result ->
@@ -473,7 +480,7 @@ update msg model =
                                     ( { model | errors = [ "Joining game error" ] }, Cmd.none )
 
                         JoinGame ->
-                            ( model, Api.joinGame model.apiUrl gameModel.game.gameId gameModel.nameInput )
+                            ( model, Api.joinGame model.apiUrl model.authToken gameModel.game.gameId gameModel.nameInput )
 
                         _ ->
                             ( model, Cmd.none )
@@ -507,6 +514,7 @@ subscriptions model =
     in
     Sub.batch
         [ gameChanged GameChanged
+        , authTokenChanged AuthTokenChanged
         , receivedUsernameFromLocalStorage ReceivedUsernameFromLocalStorage
         , timerSub
         ]

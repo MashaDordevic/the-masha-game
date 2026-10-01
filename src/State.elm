@@ -12,7 +12,8 @@ import Url
 
 
 type alias Flags =
-    { environment : String
+    { authToken : String
+    , environment : String
     }
 
 
@@ -52,6 +53,7 @@ type alias JoinedGameInfo =
 
 type alias Model =
     { currentGame : GameModel
+    , authToken : String
     , environment : String
     , apiUrl : String
     , errors : Errors
@@ -100,5 +102,6 @@ type Msg
     | GameFound (Result Http.Error Game)
     | GameAdded (Result Http.Error ( Game, Player ))
     | JoinedGame (Result Http.Error JoinedGameInfo)
+    | AuthTokenChanged String
     | ReceivedUsernameFromLocalStorage String
     | NoOpResult (Result Http.Error String)

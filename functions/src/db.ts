@@ -1,6 +1,10 @@
 import { initializeApp } from "firebase-admin/app";
 import { getDatabase } from "firebase-admin/database";
-import { GAMES_PATH, USERS_PATH } from "./constants";
+import {
+  GAME_AUTHORIZATIONS_PATH,
+  GAMES_PATH,
+  USERS_PATH,
+} from "./constants";
 
 const database = getDatabase(initializeApp());
 
@@ -40,6 +44,8 @@ export const games = {
       }),
   getById: (gameId: string) =>
     database.ref(`${GAMES_PATH}/${gameId}`).once("value"),
+  getPlayerAuthorizations: (gameId: string) =>
+    database.ref(`${GAME_AUTHORIZATIONS_PATH}/${gameId}`).once("value"),
   getByGameId: (gameId: string) =>
     database
       .ref(GAMES_PATH)
@@ -50,10 +56,26 @@ export const games = {
     database
       .ref(`${GAMES_PATH}/${id}/participants/players/${player.id}`)
       .set(player),
+  authorizePlayer: (gameId: string, playerId: string, uid: string) =>
+    database
+      .ref(`${GAME_AUTHORIZATIONS_PATH}/${gameId}/${playerId}`)
+      .set(uid),
+  claimPlayerAuthorization: (
+    gameId: string,
+    playerId: string,
+    uid: string,
+  ) =>
+    database
+      .ref(`${GAME_AUTHORIZATIONS_PATH}/${gameId}/${playerId}`)
+      .transaction((currentUid) => currentUid ?? uid)
+      .then((result) => result.snapshot.val() === uid),
   kickPlayer: (gameId: string, userId: string) =>
     database
-      .ref(`${GAMES_PATH}/${gameId}/participants/players/${userId}`)
-      .remove(),
+      .ref()
+      .update({
+        [`${GAMES_PATH}/${gameId}/participants/players/${userId}`]: null,
+        [`${GAME_AUTHORIZATIONS_PATH}/${gameId}/${userId}`]: null,
+      }),
   setOwner: (gameId: string, playerIds: string[], ownerId: string) => {
     const ownerUpdates = playerIds.reduce<Record<string, boolean>>(
       (updates, playerId) => ({

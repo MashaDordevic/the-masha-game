@@ -37,10 +37,12 @@ addWord apiUrl gameId word =
         }
 
 
-kickPlayer : String -> String -> String -> Cmd Msg
-kickPlayer apiUrl userId gameId =
-    Http.post
-        { url = apiUrl ++ "/kickPlayer"
+kickPlayer : String -> String -> String -> String -> Cmd Msg
+kickPlayer apiUrl authToken userId gameId =
+    Http.request
+        { method = "POST"
+        , headers = [ Http.header "Authorization" ("Bearer " ++ authToken) ]
+        , url = apiUrl ++ "/kickPlayer"
         , body =
             Http.jsonBody <|
                 Json.Encode.object
@@ -48,13 +50,17 @@ kickPlayer apiUrl userId gameId =
                     , ( "gameId", Json.Encode.string gameId )
                     ]
         , expect = Http.expectString NoOpResult
+        , timeout = Nothing
+        , tracker = Nothing
         }
 
 
-joinGame : String -> String -> String -> Cmd Msg
-joinGame apiUrl gameId username =
-    Http.post
-        { url = apiUrl ++ "/joinGame"
+joinGame : String -> String -> String -> String -> Cmd Msg
+joinGame apiUrl authToken gameId username =
+    Http.request
+        { method = "POST"
+        , headers = [ Http.header "Authorization" ("Bearer " ++ authToken) ]
+        , url = apiUrl ++ "/joinGame"
         , body =
             Http.jsonBody <|
                 Json.Encode.object
@@ -62,6 +68,8 @@ joinGame apiUrl gameId username =
                     , ( "username", Json.Encode.string username )
                     ]
         , expect = Http.expectJson JoinedGame joinedGameResponseDecoder
+        , timeout = Nothing
+        , tracker = Nothing
         }
 
 
@@ -97,10 +105,14 @@ createAddGameRequestBody username game =
             ]
 
 
-addGame : String -> String -> Game -> Cmd Msg
-addGame apiUrl username game =
-    Http.post
-        { url = apiUrl ++ "/addGame"
+addGame : String -> String -> String -> Game -> Cmd Msg
+addGame apiUrl authToken username game =
+    Http.request
+        { method = "POST"
+        , headers = [ Http.header "Authorization" ("Bearer " ++ authToken) ]
+        , url = apiUrl ++ "/addGame"
         , body = createAddGameRequestBody username game
         , expect = Http.expectJson GameAdded addedGameResponseDecoder
+        , timeout = Nothing
+        , tracker = Nothing
         }

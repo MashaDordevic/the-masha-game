@@ -4,33 +4,10 @@ import Dict exposing (Dict)
 import Game.Game exposing (Game)
 import Game.Words
 import Html exposing (Html, button, div, h1, h3, input, span, text)
-import Html.Attributes exposing (class, classList, disabled, id, placeholder, type_, value)
+import Html.Attributes exposing (class, disabled, id, placeholder, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Player exposing (Player)
 import State exposing (LocalUser(..), Msg(..), PlayingGameModel)
-
-
-wordCounterList : Dict String Player -> Bool -> Html Msg
-wordCounterList users isOwner =
-    users
-        |> Dict.toList
-        |> List.map
-            (\( _, user ) ->
-                div
-                    [ classList
-                        [ ( "space-between", isOwner )
-                        , ( "request", True )
-                        ]
-                    ]
-                    [ span [] [ text user.name ]
-                    , if isOwner then
-                        button [ class "icon-button", onClick (KickPlayer user.id) ] [ text "🚫" ]
-
-                      else
-                        text ""
-                    ]
-            )
-        |> div [ class "participants" ]
 
 
 wordsStatisticsView : Game.Words.Words -> Dict String Player -> Html Msg

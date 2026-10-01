@@ -3,6 +3,10 @@ import { setGlobalOptions } from 'firebase-functions/v2/options'
 import { Response } from 'express'
 import * as url from 'url'
 
+import {
+    authenticatedUserId,
+    authorizePlayerRemoval,
+} from './authorization'
 import { createGame, findGameByGameId, findOrAddUser } from './registration'
 import { games, words } from './db'
 import cors from 'cors'
@@ -42,7 +46,26 @@ const onCorsRequest = (
         })
     })
 
-export const addGame = onCorsRequest(async (request, response) => {
+const onAuthenticatedCorsRequest = (
+    handler: (
+        req: functions.https.Request,
+        resp: Response<any>,
+        uid: string
+    ) => void | Promise<void>,
+) =>
+    onCorsRequest(async (request, response) => {
+        let uid: string
+        try {
+            uid = await authenticatedUserId(request)
+        } catch {
+            response.status(401).send('Authentication required.')
+            return
+        }
+
+        await handler(request, response, uid)
+    })
+
+export const addGame = onAuthenticatedCorsRequest(async (request, response, uid) => {
     console.log('Body', request.body)
     const { username, game } = request.body
     console.log('username', request.body.username)
@@ -50,11 +73,17 @@ export const addGame = onCorsRequest(async (request, response) => {
 
     if (!username) {
         response.status(400).send('username expected but not found')
+        return
     }
 
     const writeResult = await createGame(username, game)
     console.log(writeResult)
     if (writeResult) {
+        await games.authorizePlayer(
+            writeResult.game.id,
+            writeResult.player.id,
+            uid,
+        )
         response.status(201).send({
             status: 'OK',
             game: writeResult.game,
@@ -65,7 +94,7 @@ export const addGame = onCorsRequest(async (request, response) => {
     }
 })
 
-export const joinGame = onCorsRequest(async (request, response) => {
+export const joinGame = onAuthenticatedCorsRequest(async (request, response, uid) => {
     const { username, gameId } = request.body
     if (!username || !gameId) {
         response.status(400).send('Params should be username and gameId')
@@ -86,6 +115,16 @@ export const joinGame = onCorsRequest(async (request, response) => {
     })
 
     if (existingPlayerWithSameUsername) {
+        const ownsExistingIdentity = await games.claimPlayerAuthorization(
+            game.id,
+            existingPlayerWithSameUsername.id,
+            uid,
+        )
+        if (!ownsExistingIdentity) {
+            response.status(403).send('Username is already in use.')
+            return
+        }
+
         response.status(201).send({
             status: 'User is already in the game',
             // player's status in DB will be updated after this when user joins the game and thus subscribes to DB
@@ -103,6 +142,7 @@ export const joinGame = onCorsRequest(async (request, response) => {
         isOwner: false,
     }
     await games.addPlayer(game.id, player)
+    await games.authorizePlayer(game.id, player.id, uid)
     const updatedGame = await findGameByGameId(gameId)
     if (updatedGame) {
         const hasGameStarted = updatedGame.state.round > -1
@@ -138,20 +178,42 @@ export const findGame = onCorsRequest(async (request, response) => {
     }
 })
 
-export const kickPlayer = onCorsRequest(async (request, response) => {
+export const kickPlayer = onAuthenticatedCorsRequest(async (request, response, uid) => {
     const { userId, gameId } = request.body
     if (!userId || !gameId) {
         response.status(400).send('Params should be userId and gameId')
+        return
     }
 
-    games
-        .kickPlayer(gameId, userId)
-        .then(() => {
-            response.send(`Player kicked.`)
-        })
-        .catch(() => {
-            response.status(500).send(`Failed to kick player.`)
-        })
+    const [gameSnapshot, authorizationsSnapshot] = await Promise.all([
+        games.getById(gameId),
+        games.getPlayerAuthorizations(gameId),
+    ])
+    const game = gameSnapshot.val() as Game | null
+    if (!game) {
+        response.status(404).send('Game not found.')
+        return
+    }
+
+    const authorization = authorizePlayerRemoval(
+        game,
+        authorizationsSnapshot.val() ?? {},
+        uid,
+        userId,
+    )
+    if (!authorization.allowed) {
+        const status =
+            authorization.reason === 'owner-self-removal' ? 409 : 403
+        response.status(status).send(
+            authorization.reason === 'owner-self-removal'
+                ? 'The game owner cannot be removed.'
+                : 'Only the game owner can remove players.',
+        )
+        return
+    }
+
+    await games.kickPlayer(gameId, userId)
+    response.send(`Player kicked.`)
 })
 
 export const updateGame = onCorsRequest(async (request, response) => {
