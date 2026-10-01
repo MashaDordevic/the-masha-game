@@ -38,37 +38,32 @@ test('keeps words when ownership transfers to another player', async ({
     nextOwnerPage.getByRole('heading', { name: 'Let’s add some words' })
   ).toBeVisible()
 
-  const wordInput = ownerPage.getByPlaceholder('e.g. table, mango, nudist')
-
-  await wordInput.evaluate((element) => {
-    const input = element as HTMLInputElement
-    input.value = 'suggested word'
-    input.dispatchEvent(
-      new InputEvent('input', {
-        bubbles: true,
-        data: 'suggested word',
-        inputType: 'insertReplacementText',
-      })
-    )
+  const wordInput = ownerPage.getByRole('textbox', { name: 'Word to add' })
+  let addWordRequestCount = 0
+  ownerPage.on('request', (request) => {
+    if (request.url().includes('/addWord')) {
+      addWordRequestCount += 1
+    }
   })
-  await expect(wordInput).toHaveValue('suggested word')
 
-  await wordInput.evaluate((element) => {
-    const input = element as HTMLInputElement
-    input.value = 'pasted word'
-    input.dispatchEvent(
-      new InputEvent('input', {
-        bubbles: true,
-        data: 'pasted word',
-        inputType: 'insertFromPaste',
-      })
-    )
-  })
-  await expect(wordInput).toHaveValue('pasted word')
+  // Playwright cannot invoke a software keyboard's suggestion or IME UI.
+  // fill() covers their shared contract with paste: replacing the value and
+  // dispatching the input event that Elm must use as its source of truth.
+  await wordInput.fill('  suggested café  ')
+  await expect(wordInput).toHaveValue('  suggested café  ')
 
-  await wordInput.fill('APPLE')
-  await ownerPage.getByRole('button', { name: 'Add', exact: true }).click()
-  await expect(ownerPage.getByText('APPLE', { exact: true })).toBeVisible()
+  const addWordRequest = ownerPage.waitForRequest((request) =>
+    request.url().includes('/addWord')
+  )
+  await wordInput.press('Enter')
+  const submittedRequest = await addWordRequest
+
+  expect(submittedRequest.postDataJSON().word.word).toBe('SUGGESTED CAFÉ')
+  expect(addWordRequestCount).toBe(1)
+  await expect(wordInput).toHaveValue('')
+  await expect(
+    ownerPage.getByText('SUGGESTED CAFÉ', { exact: true })
+  ).toBeVisible()
 
   await ownerContext.close()
 

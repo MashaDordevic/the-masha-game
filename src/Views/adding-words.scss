@@ -5,6 +5,13 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+}
+
+.word-entry-form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
 
   input {
     margin-top: 10px;
