@@ -75,7 +75,13 @@ localPlayersWords words localUser =
                         (\{ id, word } ->
                             div [ class "space-between" ]
                                 [ span [] [ text word ]
-                                , button [ onClick (DeleteWord id), class "icon-button" ] [ span [] [ text "𝗫" ] ]
+                                , button
+                                    [ type_ "button"
+                                    , onClick (DeleteWord id)
+                                    , class "icon-button"
+                                    , attribute "aria-label" ("Remove " ++ word)
+                                    ]
+                                    [ span [ attribute "aria-hidden" "true" ] [ text "𝗫" ] ]
                                 ]
                         )
                     |> div [ class "word-list" ]
