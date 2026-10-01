@@ -1,7 +1,7 @@
 module Views.Help exposing (helpView)
 
 import Html exposing (Html, b, br, button, div, h2, h3, h4, p, span, text)
-import Html.Attributes exposing (class, classList)
+import Html.Attributes exposing (attribute, class, classList, type_)
 import Html.Events exposing (onClick)
 import State exposing (GameModel(..), Model, Msg(..))
 import Views.Header exposing (headerView)
@@ -123,7 +123,12 @@ helpView model =
                 ]
 
           else
-            div [ classList [ ( "help-dialog-button", True ), ( "hide", not shouldShow ) ], onClick ToggleHelpDialog ]
-                [ span [] [ text "?" ]
+            button
+                [ classList [ ( "help-dialog-button", True ), ( "secondary", True ), ( "hide", not shouldShow ) ]
+                , type_ "button"
+                , attribute "aria-label" "Open help"
+                , onClick ToggleHelpDialog
+                ]
+                [ span [ attribute "aria-hidden" "true" ] [ text "?" ]
                 ]
         ]

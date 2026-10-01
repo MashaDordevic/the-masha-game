@@ -1,11 +1,11 @@
 @use "./constants" as *;
 
 .help-dialog-button {
+  box-sizing: border-box;
   width: 56px;
   height: 56px;
-  background-color: var(--action-highlight);
+  padding: 0;
   border-radius: 50%;
-  cursor: pointer;
   bottom: 0;
   right: 0;
   position: fixed;
@@ -14,7 +14,11 @@
   align-items: center;
   margin: 0 16px 16px 0;
   font-size: 40px;
-  color: black;
+
+  &:focus-visible {
+    outline: 2px solid var(--action-highlight);
+    outline-offset: 3px;
+  }
 
   &.hide {
     display: none;
