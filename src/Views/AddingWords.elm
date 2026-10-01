@@ -89,7 +89,7 @@ localPlayersWords words localUser =
                 ]
 
 
-wordsInputView : Game -> Player -> String -> Request.State String -> Html Msg
+wordsInputView : Game -> Player -> String -> Request.State requestId String -> Html Msg
 wordsInputView game localUser inputValue request =
     let
         isLoading =

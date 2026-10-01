@@ -21,6 +21,8 @@ type StoredGame = Omit<Game, "id" | "participants" | "state"> & {
 export type DatabaseRoot = {
   games?: Record<string, StoredGame>;
   gameAuthorizations?: Record<string, Record<string, string>>;
+  users?: Record<string, User>;
+  createGameRequests?: Record<string, Record<string, string>>;
   [key: string]: unknown;
 };
 
@@ -33,6 +35,109 @@ type MutationFailure =
 export type MutationResult<T> =
   | { committed: true; root: DatabaseRoot; value: T }
   | { committed: false; reason: MutationFailure };
+
+type CreateGameInput = {
+  uid: string;
+  clientRequestId: string;
+  databaseGameId: string;
+  publicGameId: string;
+  candidatePlayerId: string;
+  username: string;
+  game: Game;
+};
+
+export const createGameMutation = (
+  root: DatabaseRoot | null,
+  input: CreateGameInput,
+): MutationResult<{
+  databaseGameId: string;
+  game: StoredGame;
+  player: Player;
+  existing: boolean;
+}> => {
+  const currentRoot = root ?? {};
+  const existingGameId =
+    currentRoot.createGameRequests?.[input.uid]?.[input.clientRequestId];
+  if (existingGameId) {
+    const existingGame = currentRoot.games?.[existingGameId];
+    const existingPlayer = existingGame
+      ? Object.values(existingGame.participants.players).find(
+          (candidate) =>
+            candidate.isOwner &&
+            currentRoot.gameAuthorizations?.[existingGameId]?.[candidate.id] ===
+              input.uid,
+        )
+      : undefined;
+    return existingGame && existingPlayer
+      ? {
+          committed: true,
+          root: currentRoot,
+          value: {
+            databaseGameId: existingGameId,
+            game: existingGame,
+            player: existingPlayer,
+            existing: true,
+          },
+        }
+      : { committed: false, reason: "conflict" };
+  }
+
+  const existingUser = Object.entries(currentRoot.users ?? {}).find(
+    ([, user]) => user.name === input.username,
+  );
+  const player: Player = {
+    id: existingUser?.[0] ?? input.candidatePlayerId,
+    name: existingUser?.[1].name ?? input.username,
+    status: "online",
+    isOwner: true,
+  };
+  const { id: _id, ...gameWithoutId } = input.game;
+  const createdGame = {
+    ...gameWithoutId,
+    gameId: input.publicGameId,
+    participants: {
+      ...input.game.participants,
+      players: { [player.id]: player },
+    },
+  } as StoredGame;
+
+  return {
+    committed: true,
+    root: {
+      ...currentRoot,
+      games: {
+        ...(currentRoot.games ?? {}),
+        [input.databaseGameId]: createdGame,
+      },
+      users: existingUser
+        ? currentRoot.users
+        : {
+            ...(currentRoot.users ?? {}),
+            [input.candidatePlayerId]: {
+              id: input.candidatePlayerId,
+              name: input.username,
+            },
+          },
+      gameAuthorizations: {
+        ...(currentRoot.gameAuthorizations ?? {}),
+        [input.databaseGameId]: { [player.id]: input.uid },
+      },
+      createGameRequests: {
+        ...(currentRoot.createGameRequests ?? {}),
+        [input.uid]: {
+          ...(currentRoot.createGameRequests?.[input.uid] ?? {}),
+          [input.clientRequestId]: input.databaseGameId,
+        },
+      },
+    },
+    value: {
+      databaseGameId: input.databaseGameId,
+      game: createdGame,
+      player,
+      existing: false,
+    },
+  };
+};
 
 const gameRound = (game: StoredGame): number | null => {
   const round = game.state?.round;

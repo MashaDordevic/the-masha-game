@@ -1,53 +1,62 @@
-module Request exposing (State, begin, error, fail, idle, isLoading, loading, succeed)
+module Request exposing (State, begin, error, fail, idle, isActive, isLoading, loading)
 
 
-type State error
+type State requestId error
     = Idle
-    | Loading
+    | Loading requestId
     | Failed error
 
 
-idle : State error
+idle : State requestId error
 idle =
     Idle
 
 
-loading : State error
-loading =
-    Loading
+loading : requestId -> State requestId error
+loading requestId =
+    Loading requestId
 
 
-begin : State error -> Maybe (State error)
-begin state =
+begin : requestId -> State requestId error -> Maybe (State requestId error)
+begin requestId state =
     case state of
-        Loading ->
+        Loading _ ->
             Nothing
 
         _ ->
-            Just Loading
+            Just (Loading requestId)
 
 
-succeed : State error -> State error
-succeed _ =
-    Idle
+isActive : requestId -> State requestId error -> Bool
+isActive requestId state =
+    case state of
+        Loading activeRequestId ->
+            activeRequestId == requestId
+
+        _ ->
+            False
 
 
-fail : error -> State error -> State error
-fail requestError _ =
-    Failed requestError
+fail : requestId -> error -> State requestId error -> State requestId error
+fail requestId requestError state =
+    if isActive requestId state then
+        Failed requestError
+
+    else
+        state
 
 
-isLoading : State error -> Bool
+isLoading : State requestId error -> Bool
 isLoading state =
     case state of
-        Loading ->
+        Loading _ ->
             True
 
         _ ->
             False
 
 
-error : State error -> Maybe error
+error : State requestId error -> Maybe error
 error state =
     case state of
         Failed requestError ->

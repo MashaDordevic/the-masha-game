@@ -41,6 +41,7 @@ const initializeElm = (authToken) => {
     node: document.getElementById("root"),
     flags: {
       authToken,
+      createRequestKey: crypto.randomUUID(),
       environment: process.env.NODE_ENV,
     },
   });

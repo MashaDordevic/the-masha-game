@@ -9,6 +9,7 @@ import {
 const database = getDatabase(initializeApp());
 
 export const users = {
+  newId: () => database.ref(USERS_PATH).push().key,
   add: (username: string) =>
     database
       .ref(USERS_PATH)
@@ -27,6 +28,7 @@ export const users = {
 };
 
 export const games = {
+  newId: () => database.ref(GAMES_PATH).push().key,
   transactionRoot: (
     update: (current: unknown) => unknown,
   ) => database.ref().transaction(update),

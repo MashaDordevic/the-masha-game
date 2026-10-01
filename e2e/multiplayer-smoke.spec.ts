@@ -10,7 +10,7 @@ test('keeps words when ownership transfers to another player', async ({
 
   await ownerPage.goto('/')
   await ownerPage.getByRole('button', { name: 'Create new game' }).click()
-  await ownerPage.getByRole('textbox').fill('ALICE')
+  await ownerPage.getByRole('textbox', { name: 'Nickname' }).fill('ALICE')
   await ownerPage.getByRole('button', { name: 'Enter' }).click()
   await expect(ownerPage).toHaveURL(/\/join\/[^/]+$/)
 
@@ -19,7 +19,7 @@ test('keeps words when ownership transfers to another player', async ({
   )
   await nextOwnerPage.goto(ownerPage.url())
   await gameLookup
-  await nextOwnerPage.getByRole('textbox').fill('BOB')
+  await nextOwnerPage.getByRole('textbox', { name: 'Nickname' }).fill('BOB')
   const joinGame = nextOwnerPage.waitForResponse((response) =>
     response.url().includes('/joinGame')
   )
@@ -45,7 +45,9 @@ test('keeps words when ownership transfers to another player', async ({
   )
   await latePlayerPage.goto(ownerPage.url())
   await latePlayerLookup
-  await latePlayerPage.getByRole('textbox').fill('CHARLIE')
+  await latePlayerPage
+    .getByRole('textbox', { name: 'Nickname' })
+    .fill('CHARLIE')
   const latePlayerJoin = latePlayerPage.waitForResponse((response) =>
     response.url().includes('/joinGame')
   )

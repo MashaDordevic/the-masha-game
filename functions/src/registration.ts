@@ -70,9 +70,18 @@ export const createGame = async (username: string, game: any) => {
     functions.logger.info(`New game: ${newGame}.`)
     const addedGame = await games.add(newGame)
 
-    games.gameRef(addedGame.id).on('child_changed', async () => {
+    watchGameOwnership(addedGame.id)
+
+    return {
+        game: addedGame,
+        player: player,
+    }
+}
+
+export const watchGameOwnership = (gameId: string) => {
+    games.gameRef(gameId).on('child_changed', async () => {
         await games
-            .gameRef(addedGame.id)
+            .gameRef(gameId)
             .once('value')
             .then(async (data) => {
                 const refetchedGame = { ...data.val(), id: data.key }
@@ -80,11 +89,6 @@ export const createGame = async (username: string, game: any) => {
                 await swapOwnerIfNeeded(refetchedGame)
             })
     })
-
-    return {
-        game: addedGame,
-        player: player,
-    }
 }
 
 export const swapOwnerIfNeeded = async (game: Game): Promise<Game> => {

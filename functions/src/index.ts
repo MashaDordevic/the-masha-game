@@ -1,13 +1,19 @@
 import * as functions from 'firebase-functions'
 import { setGlobalOptions } from 'firebase-functions/v2/options'
 import { Response } from 'express'
+import { nanoid } from 'nanoid'
 import * as url from 'url'
 
 import { authenticatedUserId, authorizePlayerRemoval } from './authorization'
-import { createGame, findGameByGameId, findOrAddUser } from './registration'
-import { games } from './db'
+import {
+    findGameByGameId,
+    findOrAddUser,
+    watchGameOwnership,
+} from './registration'
+import { games, users } from './db'
 import {
     addWordMutation,
+    createGameMutation,
     DatabaseRoot,
     deleteWordMutation,
     joinGameMutation,
@@ -106,32 +112,52 @@ const sendMutationFailure = (
 }
 
 export const addGame = onAuthenticatedCorsRequest(async (request, response, uid) => {
-    console.log('Body', request.body)
-    const { username, game } = request.body
-    console.log('username', request.body.username)
-    console.log('game', request.body.game)
+    const { username, game, clientRequestId } = request.body
 
-    if (!username) {
-        response.status(400).send('username expected but not found')
+    if (
+        !username ||
+        !game ||
+        typeof clientRequestId !== 'string' ||
+        !/^[A-Za-z0-9_-]{16,128}$/.test(clientRequestId)
+    ) {
+        response
+            .status(400)
+            .send('username, game, and a valid clientRequestId are required')
         return
     }
 
-    const writeResult = await createGame(username, game)
-    console.log(writeResult)
-    if (writeResult) {
-        await games.authorizePlayer(
-            writeResult.game.id,
-            writeResult.player.id,
-            uid,
-        )
-        response.status(201).send({
-            status: 'OK',
-            game: writeResult.game,
-            player: writeResult.player,
-        })
-    } else {
-        response.status(500).send(`Cannot add game.`)
+    const databaseGameId = games.newId()
+    const candidatePlayerId = users.newId()
+    if (!databaseGameId || !candidatePlayerId) {
+        response.status(500).send('Could not allocate game identifiers.')
+        return
     }
+    const result = await runRootMutation((root) =>
+        createGameMutation(root, {
+            uid,
+            clientRequestId,
+            databaseGameId,
+            publicGameId: nanoid(5),
+            candidatePlayerId,
+            username,
+            game,
+        }),
+    )
+    if (!result.committed) {
+        sendMutationFailure(response, result)
+        return
+    }
+    if (!result.value.existing) {
+        watchGameOwnership(result.value.databaseGameId)
+    }
+    response.status(result.value.existing ? 200 : 201).send({
+        status: result.value.existing ? 'Existing game returned.' : 'OK',
+        game: {
+            ...result.value.game,
+            id: result.value.databaseGameId,
+        },
+        player: result.value.player,
+    })
 })
 
 export const joinGame = onAuthenticatedCorsRequest(async (request, response, uid) => {

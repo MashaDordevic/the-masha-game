@@ -3,6 +3,7 @@ const test = require('node:test')
 
 const {
     addWordMutation,
+    createGameMutation,
     deleteWordMutation,
     joinGameMutation,
     updateGameMutation,
@@ -41,6 +42,60 @@ const proposedRoundOne = (root) => ({
     ...root.games.game,
     id: 'game',
     state: { ...root.games.game.state, round: 1 },
+})
+
+const createInput = (overrides = {}) => ({
+    uid: 'creator-uid',
+    clientRequestId: 'stable-client-request',
+    databaseGameId: 'new-game',
+    publicGameId: 'FGHIJ',
+    candidatePlayerId: 'new-player',
+    username: 'CREATOR',
+    game: {
+        ...game(0, {}),
+        id: '',
+    },
+    ...overrides,
+})
+
+test('returns the same game when a create request is retried', () => {
+    const created = createGameMutation(null, createInput())
+    assert.equal(created.committed, true)
+
+    const retried = createGameMutation(
+        created.root,
+        createInput({
+            databaseGameId: 'duplicate-game',
+            publicGameId: 'XXXXX',
+            candidatePlayerId: 'duplicate-player',
+        })
+    )
+
+    assert.equal(retried.committed, true)
+    assert.equal(retried.value.existing, true)
+    assert.equal(retried.value.databaseGameId, 'new-game')
+    assert.equal(retried.value.game.gameId, 'FGHIJ')
+    assert.deepEqual(Object.keys(retried.root.games), ['new-game'])
+    assert.deepEqual(Object.keys(retried.root.users), ['new-player'])
+})
+
+test('scopes create idempotency keys to the authenticated user', () => {
+    const first = createGameMutation(null, createInput())
+    const second = createGameMutation(
+        first.root,
+        createInput({
+            uid: 'other-uid',
+            databaseGameId: 'other-game',
+            publicGameId: 'KLMNO',
+        })
+    )
+
+    assert.equal(second.committed, true)
+    assert.equal(second.value.existing, false)
+    assert.deepEqual(Object.keys(second.root.games).sort(), [
+        'new-game',
+        'other-game',
+    ])
 })
 
 test('serializes join before team creation without losing the player', () => {

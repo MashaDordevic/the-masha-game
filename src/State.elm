@@ -15,6 +15,7 @@ import Url
 type alias Flags =
     { authToken : String
     , environment : String
+    , createRequestKey : String
     }
 
 
@@ -28,7 +29,7 @@ type alias PlayingGameModel =
     , game : Game
     , isOwner : Bool
     , wordInput : String
-    , addWordRequest : Request.State String
+    , addWordRequest : Request.State ( RequestId, String ) String
     , turnTimer : Int
     , isBetweenRounds : Bool
     }
@@ -40,11 +41,15 @@ type alias InitialGameModel =
     }
 
 
+type alias RequestId =
+    Int
+
+
 type GameModel
     = Initial InitialGameModel
-    | CreatingGame { nameInput : String, request : Request.State String }
-    | LoadingGameToJoin { nameInput : String }
-    | JoiningGame { game : Game, nameInput : String, request : Request.State String }
+    | CreatingGame { nameInput : String, clientRequestId : String, request : Request.State RequestId String }
+    | LoadingGameToJoin { gameCode : String, request : Request.State ( RequestId, String ) String }
+    | JoiningGame { game : Game, nameInput : String, request : Request.State ( RequestId, String ) String }
     | Playing PlayingGameModel
 
 
@@ -63,6 +68,8 @@ type alias JoinedGameInfo =
 type alias Model =
     { currentGame : GameModel
     , authToken : String
+    , createRequestKey : String
+    , nextRequestId : RequestId
     , environment : String
     , apiUrl : String
     , errors : Errors
@@ -79,7 +86,8 @@ type Msg
     | LinkClicked Browser.UrlRequest
     | SetCreatingGameMode
     | UpdateNameInput String
-    | GameNotFound
+    | RetryGameLookup
+    | BackToStart
     | AddGame
     | JoinGame
     | EnterGame
@@ -108,10 +116,10 @@ type Msg
     | DebugSetNextPlayer
     | DebugGuessNextWords
     | DebugSetRound Int
-    | GameFound (Result Http.Error Game)
-    | GameAdded (Result Http.Error ( Game, Player ))
-    | JoinedGame (Result Http.Error JoinedGameInfo)
-    | WordAdded (Result Http.Error String)
+    | GameFound RequestId String (Result Http.Error Game)
+    | GameAdded RequestId (Result Http.Error ( Game, Player ))
+    | JoinedGame RequestId String (Result Http.Error JoinedGameInfo)
+    | WordAdded RequestId String (Result Http.Error String)
     | AuthTokenChanged String
     | ReceivedUsernameFromLocalStorage String
     | NoOpResult (Result Http.Error String)
