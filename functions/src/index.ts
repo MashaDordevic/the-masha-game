@@ -8,6 +8,7 @@ import {
     authorizePlayerRemoval,
 } from './authorization'
 import { createGame, findGameByGameId, findOrAddUser } from './registration'
+import { canJoinAsPlayer } from './joinPolicy'
 import { games, words } from './db'
 import cors from 'cors'
 // import { database } from "firebase-admin";
@@ -145,8 +146,7 @@ export const joinGame = onAuthenticatedCorsRequest(async (request, response, uid
     await games.authorizePlayer(game.id, player.id, uid)
     const updatedGame = await findGameByGameId(gameId)
     if (updatedGame) {
-        const hasGameStarted = updatedGame.state.round > -1
-        if (!hasGameStarted) {
+        if (canJoinAsPlayer(updatedGame.state.round)) {
             response.status(201).send({
                 status: `Player added.`,
                 player: player,

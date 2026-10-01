@@ -38,6 +38,36 @@ test('keeps words when ownership transfers to another player', async ({
     nextOwnerPage.getByRole('heading', { name: 'Let’s add some words' })
   ).toBeVisible()
 
+  const latePlayerContext = await browser.newContext()
+  const latePlayerPage = await latePlayerContext.newPage()
+  const latePlayerLookup = latePlayerPage.waitForResponse((response) =>
+    response.url().includes('/findGame')
+  )
+  await latePlayerPage.goto(ownerPage.url())
+  await latePlayerLookup
+  await latePlayerPage.getByRole('textbox').fill('CHARLIE')
+  const latePlayerJoin = latePlayerPage.waitForResponse((response) =>
+    response.url().includes('/joinGame')
+  )
+  await latePlayerPage.getByRole('button', { name: 'Enter' }).click()
+  const latePlayerJoinResponse = await latePlayerJoin
+
+  expect((await latePlayerJoinResponse.json()).status).toBe('Player added.')
+  await expect(
+    latePlayerPage.getByRole('heading', { name: 'Let’s add some words' })
+  ).toBeVisible()
+  await expect(
+    latePlayerPage.getByRole('textbox', { name: 'Word to add' })
+  ).toBeVisible()
+  await latePlayerPage
+    .getByRole('textbox', { name: 'Word to add' })
+    .fill('late arrival')
+  const latePlayerWordRequest = latePlayerPage.waitForResponse((response) =>
+    response.url().includes('/addWord')
+  )
+  await latePlayerPage.getByRole('button', { name: 'Add' }).click()
+  await latePlayerWordRequest
+
   const wordInput = ownerPage.getByRole('textbox', { name: 'Word to add' })
   let addWordRequestCount = 0
   ownerPage.on('request', (request) => {
@@ -75,6 +105,12 @@ test('keeps words when ownership transfers to another player', async ({
       .locator('.words-stats-container .space-between')
       .filter({ hasText: 'ALICE' })
   ).toContainText('1')
+  await expect(
+    nextOwnerPage
+      .locator('.words-stats-container .space-between')
+      .filter({ hasText: 'CHARLIE' })
+  ).toContainText('1')
 
+  await latePlayerContext.close()
   await nextOwnerContext.close()
 })
