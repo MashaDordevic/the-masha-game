@@ -11,11 +11,36 @@ Try it out at: [https://themashagame.com/](https://themashagame.com/)
 
 ## How to develop the app?
 
-Install `yarn global add create-elm-app` first, use node v 16.20.0 (functions use node 22).
-For functions: `npm install -g firebase-tools`.
+Use Node 22 and install the pinned project tools:
 
-Run the elm app with `elm-app start`, run `yarn css` to start sass compiler ,and run functions locally by going to the `functions` directory and running `yarn serve` (you need to rerun this command on change).
-(Read the dear message, you probably need to run `firebase login` first).
+```sh
+nvm use
+npm install --ignore-scripts
+npm --prefix functions install
+npm start
+```
+
+The root install skips lifecycle scripts because the legacy `node-sass`
+dependency does not support the current runtime. Its replacement is tracked in
+`TODO.md`.
+
+### Testing
+
+Run the fast verification suite for every task:
+
+```sh
+npm run verify
+```
+
+Run the two-player smoke test only when E2E validation is explicitly requested:
+
+```sh
+npx playwright install chromium
+npm run test:e2e
+```
+
+The E2E test uses local Firebase Database and Functions emulators and requires
+Java 21. See `TASK_EXECUTOR.md` for the complete task workflow.
 
 ## How to publish the app?
 

@@ -7,11 +7,18 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "test",
+    "start": "NODE_OPTIONS=--openssl-legacy-provider elm-app start",
+    "start:test": "BROWSER=none NODE_OPTIONS=--openssl-legacy-provider elm-app start",
+    "build": "NODE_OPTIONS=--openssl-legacy-provider elm-app build",
+    "test": "npm run test:unit",
+    "test:unit": "elm-test",
+    "test:functions": "npm --prefix functions run lint && npm --prefix functions run build",
+    "test:e2e": "./scripts/test-e2e.sh",
+    "verify": "npm run test:unit && npm run test:functions && npm run build",
     "build-css": "node-sass-chokidar src/ -o src/",
     "watch-css": "npm run build-css && node-sass-chokidar src/ -o src/ --watch --recursive",
     "css": "npm run watch-css",
-    "deploy": "npm run build-css && elm-app build && firebase deploy --only hosting"
+    "deploy": "npm run build-css && npm run build && firebase deploy --only hosting"
   },
   "repository": {
     "type": "git",
@@ -26,5 +33,12 @@
   "dependencies": {
     "node-sass-chokidar": "2.0.0",
     "nosleep.js": "^0.12.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "create-elm-app": "5.22.0",
+    "elm": "0.19.1-6",
+    "elm-test": "0.19.1-revision9",
+    "firebase-tools": "14.16.0"
   }
 }

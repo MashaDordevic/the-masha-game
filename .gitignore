@@ -14,5 +14,8 @@ node_modules
 .DS_Store
 🔒.postman_collection_zettle.json
 firebase-debug.log
+database-debug.log
+playwright-report/
+test-results/
 
 /.idea

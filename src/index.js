@@ -20,7 +20,10 @@ const LOCAL_STORAGE_KEY = "TheMashaGame.username";
 const firebaseConfig = {
     apiKey: "AIzaSyA_Hv4Deh_usUCTACNLESTxpyM4QHWfv58",
     authDomain: "themashagame-990a8.firebaseapp.com",
-    databaseURL: "https://themashagame-990a8.firebaseio.com",
+    databaseURL:
+      process.env.NODE_ENV === "development"
+        ? "http://localhost:9000?ns=themashagame-990a8"
+        : "https://themashagame-990a8.firebaseio.com",
     projectId: "themashagame-990a8",
     storageBucket: "themashagame-990a8.appspot.com",
     messagingSenderId: "616742583607",

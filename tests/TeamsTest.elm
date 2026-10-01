@@ -39,7 +39,7 @@ suit =
         , test "advanceCurrentTeam one team" <|
             \_ ->
                 advanceCurrentTeam (Teams (Just (Team [ Player "2-1" "p21" Online False, Player "2-2" "p22" Online False ] 10)) [])
-                    |> Expect.equal (Teams (Just (Team [ Player "2-1" "p21" Online False, Player "2-2" "p22" Online False ] 10)) [])
+                    |> Expect.equal (Teams (Just (Team [ Player "2-2" "p22" Online False, Player "2-1" "p21" Online False ] 10)) [])
         , test "increaseCurrentTeamsScore" <|
             \_ ->
                 increaseCurrentTeamsScore (Teams (Just (Team [ Player "1" "p1" Online False, Player "2" "p2" Online False ] 0)) [ Team [ Player "2-1" "p21" Online False, Player "2-2" "p22" Online False ] 10 ])
