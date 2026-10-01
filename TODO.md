@@ -1,7 +1,7 @@
 # TODO
 
 - [x] Align ESLint with `@typescript-eslint` 8.44, which requires ESLint 8.57 or newer.
-- [ ] Replace `node-sass` with Dart Sass, compile only `main.scss`, import SCSS files directly, and stop tracking generated CSS for each component.
+- [x] Replace `node-sass` with Dart Sass, compile only `main.scss`, import SCSS files directly, and stop tracking generated CSS for each component.
 - [ ] Update all project dependencies to supported versions and verify the application, tests, builds, and deployment tooling remain compatible.
 
 # Sandra's tips

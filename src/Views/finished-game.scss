@@ -1,3 +1,7 @@
+@use "sass:list";
+@use "sass:math";
+@use "sass:string";
+
 .winners {
   font-family: Bangers, sans-serif;
   font-size: 48px;
@@ -28,28 +32,28 @@
 $colors: (#d13447, #ffbf00, #263672);
 
 @for $i from 0 through 150 {
-  $w: random(8);
-  $l: random(100);
+  $w: math.random(8);
+  $l: math.random(100);
   .confetti-#{$i} {
     position: absolute;
 
     width: #{$w}px;
     height: #{$w * 0.4}px;
-    background-color: nth($colors, random(3));
+    background-color: list.nth($colors, math.random(3));
     top: -10%;
-    left: unquote($l + "%");
-    opacity: random() + 0.5;
-    transform: rotate(#{random() * 360}deg);
+    left: string.unquote($l + "%");
+    opacity: math.random() + 0.5;
+    transform: rotate(#{math.random() * 360}deg);
     animation: drop-#{$i}
-      unquote(4 + random() + "s")
-      unquote(random() + "s")
+      string.unquote(4 + math.random() + "s")
+      string.unquote(math.random() + "s")
       infinite;
   }
 
   @keyframes drop-#{$i} {
     100% {
       top: 110%;
-      left: unquote($l + random(15) + "%");
+      left: string.unquote($l + math.random(15) + "%");
     }
   }
 }

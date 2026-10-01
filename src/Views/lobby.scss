@@ -1,4 +1,4 @@
-@import "./constants.scss";
+@use "./constants" as *;
 
 .header {
   margin-bottom: 70px;

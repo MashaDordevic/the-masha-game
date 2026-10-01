@@ -15,14 +15,10 @@ Use Node 22 and install the pinned project tools:
 
 ```sh
 nvm use
-npm install --ignore-scripts
+npm install
 npm --prefix functions install
 npm start
 ```
-
-The root install skips lifecycle scripts because the legacy `node-sass`
-dependency does not support the current runtime. Its replacement is tracked in
-`TODO.md`.
 
 ### Testing
 

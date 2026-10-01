@@ -1,14 +1,14 @@
-@import "game.css";
-@import "./Views/start.css";
-@import "./Views/page-layout.css";
-@import "./Views/name-input.css";
-@import "./Views/adding-words.css";
-@import "./Views/Playing/playing.css";
-@import "./Views/finished-game.css";
-@import "./Views/Playing/between-rounds.css";
-@import "./Views/help.css";
-@import "./Views/donate.css";
-@import "./Views/lobby.css";
+@use "game";
+@use "./Views/start";
+@use "./Views/page-layout";
+@use "./Views/name-input";
+@use "./Views/adding-words";
+@use "./Views/Playing/playing";
+@use "./Views/finished-game";
+@use "./Views/Playing/between-rounds";
+@use "./Views/help";
+@use "./Views/donate";
+@use "./Views/lobby";
 /*
   elm-hot creates an additional div wrapper around the app to make HMR possible.
   This could break styling in development mode if you are using Elm UI.

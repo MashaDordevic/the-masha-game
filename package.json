@@ -15,8 +15,8 @@
     "test:functions": "npm --prefix functions run lint && npm --prefix functions run build",
     "test:e2e": "./scripts/test-e2e.sh",
     "verify": "npm run test:unit && npm run test:functions && npm run build",
-    "build-css": "node-sass-chokidar src/ -o src/",
-    "watch-css": "npm run build-css && node-sass-chokidar src/ -o src/ --watch --recursive",
+    "build-css": "sass --no-source-map src/main.scss src/main.css",
+    "watch-css": "sass --watch --no-source-map src/main.scss:src/main.css",
     "css": "npm run watch-css",
     "deploy": "npm run build-css && npm run build && firebase deploy --only hosting"
   },
@@ -31,7 +31,6 @@
   },
   "homepage": "https://github.com/MasaDjordjevic/the-masha-game#readme",
   "dependencies": {
-    "node-sass-chokidar": "2.0.0",
     "nosleep.js": "^0.12.0"
   },
   "devDependencies": {
@@ -39,6 +38,7 @@
     "create-elm-app": "5.22.0",
     "elm": "0.19.1-6",
     "elm-test": "0.19.1-revision9",
-    "firebase-tools": "14.16.0"
+    "firebase-tools": "14.16.0",
+    "sass": "1.105.1"
   }
 }

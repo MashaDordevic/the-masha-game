@@ -5,8 +5,7 @@ Use this flow for one unchecked item from `TODO.md` at a time.
 ## Prerequisites
 
 - Node.js 22 (`nvm use`)
-- Dependencies installed with `npm install --ignore-scripts` while the legacy
-  `node-sass` replacement remains pending
+- Dependencies installed with `npm install`
 
 E2E runs additionally require Java 21 and Chromium installed with
 `npx playwright install chromium`.
