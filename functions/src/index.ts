@@ -3,13 +3,17 @@ import { setGlobalOptions } from 'firebase-functions/v2/options'
 import { Response } from 'express'
 import * as url from 'url'
 
-import {
-    authenticatedUserId,
-    authorizePlayerRemoval,
-} from './authorization'
+import { authenticatedUserId, authorizePlayerRemoval } from './authorization'
 import { createGame, findGameByGameId, findOrAddUser } from './registration'
-import { canJoinAsPlayer } from './joinPolicy'
-import { games, words } from './db'
+import { games } from './db'
+import {
+    addWordMutation,
+    DatabaseRoot,
+    deleteWordMutation,
+    joinGameMutation,
+    MutationResult,
+    updateGameMutation,
+} from './gameMutations'
 import cors from 'cors'
 // import { database } from "firebase-admin";
 
@@ -66,6 +70,41 @@ const onAuthenticatedCorsRequest = (
         await handler(request, response, uid)
     })
 
+const runRootMutation = async <T>(
+    mutate: (root: DatabaseRoot | null) => MutationResult<T>,
+): Promise<MutationResult<T>> => {
+    let outcome: MutationResult<T> = {
+        committed: false,
+        reason: 'not-found',
+    }
+    await games.transactionRoot((current) => {
+        outcome = mutate((current as DatabaseRoot | null) ?? null)
+        return outcome.committed ? outcome.root : undefined
+    })
+    return outcome
+}
+
+const sendMutationFailure = (
+    response: Response<any>,
+    result: Extract<MutationResult<unknown>, { committed: false }>,
+) => {
+    const status =
+        result.reason === 'not-found'
+            ? 404
+            : result.reason === 'forbidden'
+              ? 403
+              : 409
+    const message =
+        result.reason === 'incompatible-game'
+            ? 'Game state is incompatible. Recreate this legacy game.'
+            : result.reason === 'conflict'
+              ? 'Game state changed. Refresh and try again.'
+              : result.reason === 'forbidden'
+                ? 'Not authorized for this game action.'
+                : 'Game not found.'
+    response.status(status).send(message)
+}
+
 export const addGame = onAuthenticatedCorsRequest(async (request, response, uid) => {
     console.log('Body', request.body)
     const { username, game } = request.body
@@ -109,59 +148,31 @@ export const joinGame = onAuthenticatedCorsRequest(async (request, response, uid
         return
     }
 
-    const existingPlayerWithSameUsername = Object.values(
-        game.participants?.players ?? {},
-    ).find((p) => {
-        return p.name === username
-    })
-
-    if (existingPlayerWithSameUsername) {
-        const ownsExistingIdentity = await games.claimPlayerAuthorization(
-            game.id,
-            existingPlayerWithSameUsername.id,
-            uid,
-        )
-        if (!ownsExistingIdentity) {
-            response.status(403).send('Username is already in use.')
-            return
-        }
-
-        response.status(201).send({
-            status: 'User is already in the game',
-            // player's status in DB will be updated after this when user joins the game and thus subscribes to DB
-            player: { ...existingPlayerWithSameUsername, status: 'online' },
-            game: game,
-        })
-        return
-    }
-
     const addedUser = await findOrAddUser(username)
-    const player = {
+    const candidate = {
         id: addedUser.id,
         name: addedUser.name,
         status: 'online',
         isOwner: false,
     }
-    await games.addPlayer(game.id, player)
-    await games.authorizePlayer(game.id, player.id, uid)
-    const updatedGame = await findGameByGameId(gameId)
-    if (updatedGame) {
-        if (canJoinAsPlayer(updatedGame.state.round)) {
-            response.status(201).send({
-                status: `Player added.`,
-                player: player,
-                game: updatedGame,
-            })
-        } else {
-            response.status(201).send({
-                status: `Game watcher added.`,
-                player: player,
-                game: updatedGame,
-            })
-        }
-    } else {
-        response.status(500).send(`Cannot add player to the game.`)
+    const result = await runRootMutation((root) =>
+        joinGameMutation(root, game.id, candidate, uid),
+    )
+    if (!result.committed) {
+        sendMutationFailure(response, result)
+        return
     }
+
+    response.status(201).send({
+        status: result.value.existing
+            ? 'User is already in the game'
+            : result.value.role === 'player'
+              ? 'Player added.'
+              : 'Game watcher added.',
+        role: result.value.role,
+        player: result.value.player,
+        game: { ...result.value.game, id: game.id },
+    })
 })
 
 export const findGame = onCorsRequest(async (request, response) => {
@@ -216,51 +227,53 @@ export const kickPlayer = onAuthenticatedCorsRequest(async (request, response, u
     response.send(`Player kicked.`)
 })
 
-export const updateGame = onCorsRequest(async (request, response) => {
+export const updateGame = onAuthenticatedCorsRequest(async (request, response, uid) => {
     const { game } = request.body
     if (!game) {
         response.status(400).send('game parameter expected')
+        return
     }
 
-    games
-        .update(game)
-        .then(() => {
-            response.send(`Game updated.`)
-        })
-        .catch(() => {
-            response.status(500).send(`Cannot update game.`)
-        })
+    const result = await runRootMutation((root) =>
+        updateGameMutation(root, game, uid),
+    )
+    if (!result.committed) {
+        sendMutationFailure(response, result)
+        return
+    }
+    response.send({ ...result.value.game, id: game.id })
 })
 
-export const addWord = onCorsRequest(async (request, response) => {
+export const addWord = onAuthenticatedCorsRequest(async (request, response, uid) => {
     const { gameId, word } = request.body
     if (!gameId || !word) {
         response.status(400).send('gameId and word parameters expected')
+        return
     }
 
-    words
-        .addWord(gameId, word)
-        .then(() => {
-            response.status(201).send(`Word added.`)
-        })
-        .catch(() => {
-            response.status(500).send(`Cannot add word.`)
-        })
+    const result = await runRootMutation((root) =>
+        addWordMutation(root, gameId, word, uid),
+    )
+    if (!result.committed) {
+        sendMutationFailure(response, result)
+        return
+    }
+    response.status(201).send(`Word added.`)
 })
 
-export const deleteWord = onCorsRequest(async (request, response) => {
+export const deleteWord = onAuthenticatedCorsRequest(async (request, response, uid) => {
     const { gameId, wordId } = request.body
     if (!gameId || !wordId) {
         response.status(400).send('gameId and wordId parameters expected')
+        return
     }
 
-    words
-        .deleteWord(gameId, wordId)
-        .then((res) => {
-            console.log('delete res', res)
-            response.send(`Word deleted.`)
-        })
-        .catch(() => {
-            response.status(500).send(`Cannot add word.`)
-        })
+    const result = await runRootMutation((root) =>
+        deleteWordMutation(root, gameId, wordId, uid),
+    )
+    if (!result.committed) {
+        sendMutationFailure(response, result)
+        return
+    }
+    response.send(`Word deleted.`)
 })

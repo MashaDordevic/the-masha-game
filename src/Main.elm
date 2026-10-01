@@ -131,10 +131,10 @@ playingGameUpdate msg model =
                                     newWord =
                                         Game.Words.wordWithKey 0 (Word submittedWord localPlayer.name "")
                                 in
-                                ( { model | currentGame = Playing { gameModel | wordInput = "" } }, Api.addWord model.apiUrl game.id newWord )
+                                ( { model | currentGame = Playing { gameModel | wordInput = "" } }, Api.addWord model.apiUrl model.authToken game.id newWord )
 
                         State.DeleteWord id ->
-                            ( model, Api.deleteWord model.apiUrl game.id id )
+                            ( model, Api.deleteWord model.apiUrl model.authToken game.id id )
 
                         QuitGame ->
                             -- TODO: remove the player from the list of players or set to offline
@@ -435,14 +435,11 @@ update msg model =
 
                                         maybeLocalUser : Maybe LocalUser
                                         maybeLocalUser =
-                                            case joinedGameInfo.status of
-                                                "Player added." ->
+                                            case joinedGameInfo.role of
+                                                "player" ->
                                                     Just (LocalPlayer joinedGameInfo.player)
 
-                                                "User is already in the game" ->
-                                                    Just (LocalPlayer joinedGameInfo.player)
-
-                                                "Game watcher added." ->
+                                                "watcher" ->
                                                     Just (LocalWatcher joinedGameInfo.player)
 
                                                 _ ->

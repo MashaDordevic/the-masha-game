@@ -12,3 +12,8 @@ test('keeps new arrivals as watchers after play begins', () => {
     assert.equal(canJoinAsPlayer(1), false)
     assert.equal(canJoinAsPlayer(2), false)
 })
+
+test('does not silently classify missing legacy rounds', () => {
+    assert.equal(canJoinAsPlayer(undefined), false)
+    assert.equal(canJoinAsPlayer(null), false)
+})

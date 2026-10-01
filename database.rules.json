@@ -1,0 +1,28 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "games": {
+      ".read": true,
+      "$gameId": {
+        "participants": {
+          "players": {
+            "$playerId": {
+              "status": {
+                ".write": "auth != null && root.child('gameAuthorizations').child($gameId).child($playerId).val() === auth.uid"
+              }
+            }
+          }
+        }
+      }
+    },
+    "gameAuthorizations": {
+      ".read": false,
+      ".write": false
+    },
+    "users": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}

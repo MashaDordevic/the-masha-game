@@ -36,6 +36,7 @@ firebase.initializeApp(firebaseConfig);
 const database = firebase.database();
 
 const initializeElm = (authToken) => {
+  let currentAuthToken = authToken;
   const app = Elm.Main.init({
     node: document.getElementById("root"),
     flags: {
@@ -46,11 +47,16 @@ const initializeElm = (authToken) => {
 
   firebase.auth().onIdTokenChanged(async (user) => {
     if (user) {
-      app.ports.authTokenChanged.send(await user.getIdToken());
+      currentAuthToken = await user.getIdToken();
+      app.ports.authTokenChanged.send(currentAuthToken);
     }
   });
 
   const GAMES_PATH = "games";
+  const apiUrl =
+    process.env.NODE_ENV === "development"
+      ? "http://localhost:5001/themashagame-990a8/us-central1"
+      : "";
 
   app.ports.subscribeToGame.subscribe(({ gameId, userId }) => {
     console.log("subscribing to game", gameId, "user: ", userId);
@@ -74,7 +80,18 @@ const initializeElm = (authToken) => {
 
   app.ports.changeGame.subscribe((game) => {
     console.log("updating game to", game);
-    database.ref(`${GAMES_PATH}/${game.id}`).set(game);
+    fetch(`${apiUrl}/updateGame`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${currentAuthToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ game }),
+    }).then((response) => {
+      if (!response.ok) {
+        console.error("Unable to update game", response.status);
+      }
+    });
   });
 
   app.ports.copyInviteLink.subscribe((gameId) => {

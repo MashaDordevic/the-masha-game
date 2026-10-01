@@ -26,14 +26,10 @@ export const users = {
   ref: database.ref(USERS_PATH),
 };
 
-export const words = {
-  addWord: (id: string, word: Word) =>
-    database.ref(`${GAMES_PATH}/${id}/state/words/next/${word.id}`).set(word),
-  deleteWord: (id: string, wordId: string) =>
-    database.ref(`${GAMES_PATH}/${id}/state/words/next/${wordId}`).remove(),
-};
-
 export const games = {
+  transactionRoot: (
+    update: (current: unknown) => unknown,
+  ) => database.ref().transaction(update),
   add: (game: any) =>
     database
       .ref(GAMES_PATH)
@@ -52,23 +48,10 @@ export const games = {
       .orderByChild("gameId")
       .equalTo(gameId)
       .once("value"),
-  addPlayer: (id: string, player: Player) =>
-    database
-      .ref(`${GAMES_PATH}/${id}/participants/players/${player.id}`)
-      .set(player),
   authorizePlayer: (gameId: string, playerId: string, uid: string) =>
     database
       .ref(`${GAME_AUTHORIZATIONS_PATH}/${gameId}/${playerId}`)
       .set(uid),
-  claimPlayerAuthorization: (
-    gameId: string,
-    playerId: string,
-    uid: string,
-  ) =>
-    database
-      .ref(`${GAME_AUTHORIZATIONS_PATH}/${gameId}/${playerId}`)
-      .transaction((currentUid) => currentUid ?? uid)
-      .then((result) => result.snapshot.val() === uid),
   kickPlayer: (gameId: string, userId: string) =>
     database
       .ref()
@@ -89,7 +72,6 @@ export const games = {
       .ref(`${GAMES_PATH}/${gameId}/participants/players`)
       .update(ownerUpdates);
   },
-  update: (game: any) => database.ref(`${GAMES_PATH}/${game.id}`).set(game),
   ref: database.ref(GAMES_PATH),
   gameRef: (id: string) => database.ref(`${GAMES_PATH}/${id}`),
 };

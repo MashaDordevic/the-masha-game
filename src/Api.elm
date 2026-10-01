@@ -9,10 +9,12 @@ import Player exposing (Player, playerDecoder)
 import State exposing (..)
 
 
-deleteWord : String -> String -> String -> Cmd Msg
-deleteWord apiUrl gameId wordId =
-    Http.post
-        { url = apiUrl ++ "/deleteWord"
+deleteWord : String -> String -> String -> String -> Cmd Msg
+deleteWord apiUrl authToken gameId wordId =
+    Http.request
+        { method = "POST"
+        , headers = [ Http.header "Authorization" ("Bearer " ++ authToken) ]
+        , url = apiUrl ++ "/deleteWord"
         , body =
             Http.jsonBody <|
                 Json.Encode.object
@@ -20,13 +22,17 @@ deleteWord apiUrl gameId wordId =
                     , ( "wordId", Json.Encode.string wordId )
                     ]
         , expect = Http.expectString NoOpResult
+        , timeout = Nothing
+        , tracker = Nothing
         }
 
 
-addWord : String -> String -> Word -> Cmd Msg
-addWord apiUrl gameId word =
-    Http.post
-        { url = apiUrl ++ "/addWord"
+addWord : String -> String -> String -> Word -> Cmd Msg
+addWord apiUrl authToken gameId word =
+    Http.request
+        { method = "POST"
+        , headers = [ Http.header "Authorization" ("Bearer " ++ authToken) ]
+        , url = apiUrl ++ "/addWord"
         , body =
             Http.jsonBody <|
                 Json.Encode.object
@@ -34,6 +40,8 @@ addWord apiUrl gameId word =
                     , ( "word", wordEncoder word )
                     ]
         , expect = Http.expectString NoOpResult
+        , timeout = Nothing
+        , tracker = Nothing
         }
 
 
@@ -75,8 +83,9 @@ joinGame apiUrl authToken gameId username =
 
 joinedGameResponseDecoder : Json.Decode.Decoder JoinedGameInfo
 joinedGameResponseDecoder =
-    Json.Decode.map3 JoinedGameInfo
+    Json.Decode.map4 JoinedGameInfo
         (Json.Decode.field "status" Json.Decode.string)
+        (Json.Decode.field "role" Json.Decode.string)
         (Json.Decode.field "player" playerDecoder)
         (Json.Decode.field "game" Game.Game.gameDecoder)
 

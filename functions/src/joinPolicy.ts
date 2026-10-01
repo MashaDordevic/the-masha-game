@@ -1,1 +1,4 @@
-export const canJoinAsPlayer = (round: number): boolean => round <= 0
+import { roleForRound } from "./gameMutations";
+
+export const canJoinAsPlayer = (round: unknown): boolean =>
+  roleForRound(round) === "player";

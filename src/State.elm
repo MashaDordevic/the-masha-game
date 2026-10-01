@@ -46,6 +46,7 @@ type alias Errors =
 
 type alias JoinedGameInfo =
     { status : String
+    , role : String
     , player : Player
     , game : Game
     }
