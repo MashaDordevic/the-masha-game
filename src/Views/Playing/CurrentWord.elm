@@ -27,7 +27,7 @@ currentWord word turnTimer =
                 [ h1 [ class "current-word", onClick WordGuessed ] [ text word.word ]
                 ]
             ]
-        , button [ class "next-word", onClick WordGuessed ] [ text "Done! Next word" ]
+        , button [ class "next-word", onClick WordGuessed ] [ text "Word guessed! Next word" ]
         ]
 
 

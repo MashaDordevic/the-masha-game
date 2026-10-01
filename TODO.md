@@ -4,6 +4,7 @@
 - [x] Replace `node-sass` with Dart Sass, compile only `main.scss`, import SCSS files directly, and stop tracking generated CSS for each component.
 - [x] Update all project dependencies to supported versions and verify the application, tests, builds, and deployment tooling remain compatible.
 - [x] in the previous todo bug (a user joining twice) I couldn't remove them, the remove button did noting
+- [x] the wording "Done! next word" is not clear (done can mean end of the round) let's make the text clearer so it's about the word being guessed
 
 # Sandra's tips
 
