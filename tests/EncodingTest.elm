@@ -118,9 +118,18 @@ suite =
             , test "words" <|
                 \_ ->
                     roundTrip wordDecoder wordEncoder word
-            , test "word collections" <|
+            , test "word collections preserve stable IDs and shuffled order" <|
                 \_ ->
-                    roundTrip wordsDecoder wordsEncoder words
+                    let
+                        shuffledWords =
+                            Words
+                                [ Word "rock paper scissors" "player-2" "word-zeta" ]
+                                (Just (Word "New York City" "player-1" "word-current"))
+                                [ Word "ice cream" "player-1" "word-charlie"
+                                , Word "Elm compiler" "player-2" "word-alpha"
+                                ]
+                    in
+                    roundTrip wordsDecoder wordsEncoder shuffledWords
             , test "participants" <|
                 \_ ->
                     roundTrip participantsDecoder participantsEncoder participants

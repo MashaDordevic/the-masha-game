@@ -100,8 +100,7 @@ wordWithKey index word =
 wordsListEncoder : List Word -> Json.Encode.Value
 wordsListEncoder list =
     list
-        |> List.indexedMap wordWithKey
-        |> List.map (\word -> ( word.id, wordEncoder word ))
+        |> List.indexedMap (\index word -> ( wordToKey word index, wordEncoder word ))
         |> Json.Encode.object
 
 
