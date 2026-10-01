@@ -38,7 +38,35 @@ test('keeps words when ownership transfers to another player', async ({
     nextOwnerPage.getByRole('heading', { name: 'Let’s add some words' })
   ).toBeVisible()
 
-  await ownerPage.getByPlaceholder('e.g. table, mango, nudist').fill('APPLE')
+  const wordInput = ownerPage.getByPlaceholder('e.g. table, mango, nudist')
+
+  await wordInput.evaluate((element) => {
+    const input = element as HTMLInputElement
+    input.value = 'suggested word'
+    input.dispatchEvent(
+      new InputEvent('input', {
+        bubbles: true,
+        data: 'suggested word',
+        inputType: 'insertReplacementText',
+      })
+    )
+  })
+  await expect(wordInput).toHaveValue('suggested word')
+
+  await wordInput.evaluate((element) => {
+    const input = element as HTMLInputElement
+    input.value = 'pasted word'
+    input.dispatchEvent(
+      new InputEvent('input', {
+        bubbles: true,
+        data: 'pasted word',
+        inputType: 'insertFromPaste',
+      })
+    )
+  })
+  await expect(wordInput).toHaveValue('pasted word')
+
+  await wordInput.fill('APPLE')
   await ownerPage.getByRole('button', { name: 'Add', exact: true }).click()
   await expect(ownerPage.getByText('APPLE', { exact: true })).toBeVisible()
 

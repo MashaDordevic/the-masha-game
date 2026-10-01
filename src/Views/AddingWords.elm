@@ -4,7 +4,7 @@ import Dict exposing (Dict)
 import Game.Game exposing (Game)
 import Game.Words
 import Html exposing (Html, button, div, h1, h3, input, span, text)
-import Html.Attributes exposing (class, disabled, id, placeholder, type_, value)
+import Html.Attributes exposing (attribute, class, disabled, id, placeholder, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Player exposing (Player)
 import State exposing (LocalUser(..), Msg(..), PlayingGameModel)
@@ -85,7 +85,18 @@ localPlayersWords words localUser =
 wordsInputView : Game -> Player -> String -> Html Msg
 wordsInputView game localUser inputValue =
     div [ class "words-input-container" ]
-        [ input [ type_ "text", id "word", placeholder "e.g. table, mango, nudist", value inputValue, onInput UpdateWordInput ] []
+        [ input
+            [ type_ "text"
+            , id "word"
+            , attribute "name" "word"
+            , attribute "autocomplete" "on"
+            , attribute "autocapitalize" "characters"
+            , attribute "spellcheck" "true"
+            , placeholder "e.g. table, mango, nudist"
+            , value inputValue
+            , onInput UpdateWordInput
+            ]
+            []
         , button [ class "secondary", onClick AddWord ] [ text "Add" ]
         , localPlayersWords game.state.words localUser
         ]

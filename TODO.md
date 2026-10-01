@@ -5,6 +5,7 @@
 - [x] Update all project dependencies to supported versions and verify the application, tests, builds, and deployment tooling remain compatible.
 - [x] in the previous todo bug (a user joining twice) I couldn't remove them, the remove button did noting
 - [x] the wording "Done! next word" is not clear (done can mean end of the round) let's make the text clearer so it's about the word being guessed
+- [x] when I tap on autosuggested word by my keybaord it doesn't get inserted in the add word field, this should work and pasting a word should work 
 
 # Sandra's tips
 

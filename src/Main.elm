@@ -114,16 +114,22 @@ playingGameUpdate msg model =
                     in
                     case msg of
                         UpdateWordInput input ->
-                            ( { model | currentGame = Playing { gameModel | wordInput = String.toUpper input } }, Cmd.none )
+                            ( { model | currentGame = Playing { gameModel | wordInput = input } }, Cmd.none )
 
                         AddWord ->
-                            if String.isEmpty gameModel.wordInput then
+                            let
+                                submittedWord =
+                                    gameModel.wordInput
+                                        |> String.trim
+                                        |> String.toUpper
+                            in
+                            if String.isEmpty submittedWord then
                                 ( model, Cmd.none )
 
                             else
                                 let
                                     newWord =
-                                        Game.Words.wordWithKey 0 (Word gameModel.wordInput localPlayer.name "")
+                                        Game.Words.wordWithKey 0 (Word submittedWord localPlayer.name "")
                                 in
                                 ( { model | currentGame = Playing { gameModel | wordInput = "" } }, Api.addWord model.apiUrl game.id newWord )
 
