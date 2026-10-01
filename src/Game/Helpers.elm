@@ -1,8 +1,17 @@
-module Game.Helpers exposing (decodeList)
+module Game.Helpers exposing (optionalNullableField)
 
 import Json.Decode exposing (Decoder)
 
 
-decodeList : Decoder (List a) -> Decoder (List a)
-decodeList listDecoder =
-    Json.Decode.oneOf [ listDecoder, Json.Decode.succeed [] ]
+optionalNullableField : String -> Decoder a -> a -> Decoder a
+optionalNullableField name decoder fallback =
+    Json.Decode.keyValuePairs Json.Decode.value
+        |> Json.Decode.andThen
+            (\fields ->
+                if List.any (Tuple.first >> (==) name) fields then
+                    Json.Decode.field name (Json.Decode.nullable decoder)
+                        |> Json.Decode.map (Maybe.withDefault fallback)
+
+                else
+                    Json.Decode.succeed fallback
+            )

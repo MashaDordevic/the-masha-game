@@ -1,6 +1,7 @@
 module Game.Words exposing (..)
 
 import Dict exposing (Dict)
+import Game.Helpers exposing (optionalNullableField)
 import Json.Decode exposing (Decoder, field, map3, string)
 import Json.Encode
 import List
@@ -61,9 +62,9 @@ wordsDecoder =
                     (Dict.toList >> List.map Tuple.second)
     in
     map3 Words
-        (Json.Decode.oneOf [ field "guessed" dictToValueList, Json.Decode.succeed [] ])
-        (Json.Decode.oneOf [ field "current" (Json.Decode.maybe wordDecoder), Json.Decode.succeed Maybe.Nothing ])
-        (Json.Decode.oneOf [ field "next" dictToValueList, Json.Decode.succeed [] ])
+        (optionalNullableField "guessed" dictToValueList [])
+        (optionalNullableField "current" (Json.Decode.map Just wordDecoder) Maybe.Nothing)
+        (optionalNullableField "next" dictToValueList [])
 
 
 groupByPlayer : Word -> Dict String (List Word) -> Dict String (List Word)

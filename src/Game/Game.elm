@@ -2,6 +2,7 @@ module Game.Game exposing (..)
 
 import Constants exposing (defaultTimer)
 import Dict
+import Game.Helpers exposing (optionalNullableField)
 import Game.Participants exposing (Participants, emptyParticipants, participantsDecoder, participantsEncoder)
 import Game.Status exposing (GameStatus, gameStatusDecoder, gameStatusEncoder)
 import Game.Teams exposing (Teams, emptyTeams, teamsDecoder, teamsEncoder)
@@ -44,8 +45,8 @@ type alias GameState =
 gameStateDecoder : Decoder GameState
 gameStateDecoder =
     Json.Decode.map4 GameState
-        (Json.Decode.oneOf [ field "words" wordsDecoder, Json.Decode.succeed (Words [] Maybe.Nothing []) ])
-        (Json.Decode.oneOf [ field "teams" teamsDecoder, Json.Decode.succeed emptyTeams ])
+        (optionalNullableField "words" wordsDecoder (Words [] Maybe.Nothing []))
+        (optionalNullableField "teams" teamsDecoder emptyTeams)
         (field "round" int)
         (field "turnTimer" turnTimerDecoder)
 
@@ -82,8 +83,8 @@ gameDecoder =
         (field "gameId" Json.Decode.string)
         (field "creator" Json.Decode.string)
         (field "status" gameStatusDecoder)
-        (Json.Decode.oneOf [ field "participants" participantsDecoder, Json.Decode.succeed emptyParticipants ])
-        (Json.Decode.oneOf [ field "state" gameStateDecoder, Json.Decode.succeed emptyGameState ])
+        (optionalNullableField "participants" participantsDecoder emptyParticipants)
+        (optionalNullableField "state" gameStateDecoder emptyGameState)
         (field "defaultTimer" int)
 
 
@@ -106,7 +107,7 @@ turnTimerTypeDecoder timerType =
             field "value" Json.Decode.int |> Json.Decode.map Restarted
 
         _ ->
-            Json.Decode.succeed (NotTicking 0)
+            Json.Decode.fail "turn timer status unknown"
 
 
 

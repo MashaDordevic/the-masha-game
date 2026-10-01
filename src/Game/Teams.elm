@@ -1,8 +1,8 @@
 module Game.Teams exposing (..)
 
 import Dict exposing (Dict)
-import Game.Helpers exposing (decodeList)
-import Json.Decode exposing (Decoder, field, list)
+import Game.Helpers exposing (optionalNullableField)
+import Json.Decode exposing (Decoder, field)
 import Json.Encode
 import Player exposing (Player)
 import Random
@@ -35,8 +35,8 @@ teamToString team =
 teamsDecoder : Decoder Teams
 teamsDecoder =
     Json.Decode.map2 Teams
-        (Json.Decode.oneOf [ field "current" (Json.Decode.maybe teamDecoder), Json.Decode.succeed Maybe.Nothing ])
-        (decodeList (field "next" (Json.Decode.list teamDecoder)))
+        (optionalNullableField "current" (Json.Decode.map Just teamDecoder) Maybe.Nothing)
+        (optionalNullableField "next" (Json.Decode.list teamDecoder) [])
 
 
 teamsEncoder : Teams -> Json.Encode.Value
@@ -57,7 +57,7 @@ teamsEncoder teams =
 teamDecoder : Decoder Team
 teamDecoder =
     Json.Decode.map2 Team
-        (decodeList (field "players" (Json.Decode.list Player.playerDecoder)))
+        (optionalNullableField "players" (Json.Decode.list Player.playerDecoder) [])
         (field "score" Json.Decode.int)
 
 

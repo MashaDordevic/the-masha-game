@@ -1,7 +1,8 @@
 module Game.Participants exposing (..)
 
 import Dict exposing (Dict)
-import Json.Decode exposing (Decoder, field, map2)
+import Game.Helpers exposing (optionalNullableField)
+import Json.Decode exposing (Decoder, map2)
 import Json.Encode
 import Player exposing (Player, playerDecoder, playerEncoder)
 
@@ -46,8 +47,8 @@ joinRequestsDecoder =
 participantsDecoder : Decoder Participants
 participantsDecoder =
     Json.Decode.map2 Participants
-        (Json.Decode.oneOf [ field "players" playersDecoder, Json.Decode.succeed Dict.empty ])
-        (Json.Decode.oneOf [ field "joinRequests" joinRequestsDecoder, Json.Decode.succeed Dict.empty ])
+        (optionalNullableField "players" playersDecoder Dict.empty)
+        (optionalNullableField "joinRequests" joinRequestsDecoder Dict.empty)
 
 
 participantsEncoder : Participants -> Json.Encode.Value
