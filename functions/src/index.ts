@@ -5,6 +5,7 @@ import * as url from 'url'
 import { createGame, findGameByGameId, findOrAddUser } from './registration'
 import { games, words } from './db'
 import * as cors from 'cors'
+const { setGlobalOptions } = require('firebase-functions/v2/options')
 // import { database } from "firebase-admin";
 
 // // Start writing Firebase Functions
@@ -14,6 +15,12 @@ import * as cors from 'cors'
 // const cors = require("cors")({ origin: true });
 const devCorsConfig = { origin: true }
 const prodCorsConfig = { origin: 'themashagame.com' }
+setGlobalOptions({
+    maxInstances: 1,
+    minInstances: 0,
+    timeoutSeconds: 15,
+    memory: '256MiB',
+})
 const corsHandler = cors(
     process.env.FUNCTIONS_EMULATOR === 'true' ? devCorsConfig : prodCorsConfig
 )
