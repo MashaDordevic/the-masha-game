@@ -1,5 +1,6 @@
 # Distribution
 build/
+/src/main.css
 
 # elm-package generated files
 elm-stuff

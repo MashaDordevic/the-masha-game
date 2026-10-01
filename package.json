@@ -7,19 +7,19 @@
     "test": "tests"
   },
   "scripts": {
-    "start": "NODE_OPTIONS=--openssl-legacy-provider elm-app start",
-    "start:test": "BROWSER=none NODE_OPTIONS=--openssl-legacy-provider elm-app start",
-    "build": "NODE_OPTIONS=--openssl-legacy-provider elm-app build",
+    "start": "npm run build-css && NODE_OPTIONS=--openssl-legacy-provider elm-app start",
+    "start:test": "npm run build-css && BROWSER=none NODE_OPTIONS=--openssl-legacy-provider elm-app start",
+    "build": "npm run build-css && NODE_OPTIONS=--openssl-legacy-provider elm-app build",
     "test": "npm run test:unit && npm run test:config",
     "test:unit": "elm-test",
-    "test:config": "node --test tests/firebase-config.test.js",
+    "test:config": "node --test tests/*.test.js",
     "test:functions": "npm --prefix functions run lint && npm --prefix functions test",
     "test:e2e": "./scripts/test-e2e.sh",
     "verify": "npm run test:unit && npm run test:config && npm run test:functions && npm run build",
     "build-css": "sass --no-source-map src/main.scss src/main.css",
     "watch-css": "sass --watch --no-source-map src/main.scss:src/main.css",
     "css": "npm run watch-css",
-    "deploy": "npm run build-css && npm run build && firebase deploy --only hosting"
+    "deploy": "npm run build && firebase deploy --only hosting"
   },
   "repository": {
     "type": "git",
