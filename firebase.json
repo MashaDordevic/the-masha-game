@@ -7,6 +7,7 @@
       { "source": "/joinGame", "function": "joinGame" },
       { "source": "/findGame", "function": "findGame" },
       { "source": "/updateGame", "function": "updateGame" },
+      { "source": "/kickPlayer", "function": "kickPlayer" },
       { "source": "/addWord", "function": "addWord" },
       { "source": "/deleteWord", "function": "deleteWord" },
       {
