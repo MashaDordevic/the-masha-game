@@ -1,11 +1,11 @@
 import * as functions from 'firebase-functions'
+import { setGlobalOptions } from 'firebase-functions/v2/options'
 import { Response } from 'express'
 import * as url from 'url'
 
 import { createGame, findGameByGameId, findOrAddUser } from './registration'
 import { games, words } from './db'
-import * as cors from 'cors'
-const { setGlobalOptions } = require('firebase-functions/v2/options')
+import cors from 'cors'
 // import { database } from "firebase-admin";
 
 // // Start writing Firebase Functions
@@ -22,7 +22,7 @@ setGlobalOptions({
     memory: '256MiB',
 })
 const corsHandler = cors(
-    process.env.FUNCTIONS_EMULATOR === 'true' ? devCorsConfig : prodCorsConfig
+    process.env.FUNCTIONS_EMULATOR === 'true' ? devCorsConfig : prodCorsConfig,
 )
 
 export const helloWorld = functions.https.onRequest((request, response) => {
@@ -34,7 +34,7 @@ const onCorsRequest = (
     handler: (
         req: functions.https.Request,
         resp: Response<any>
-    ) => void | Promise<void>
+    ) => void | Promise<void>,
 ) =>
     functions.https.onRequest(async (request, response) => {
         corsHandler(request, response, async () => {
@@ -80,7 +80,7 @@ export const joinGame = onCorsRequest(async (request, response) => {
     }
 
     const existingPlayerWithSameUsername = Object.values(
-        game.participants?.players ?? {}
+        game.participants?.players ?? {},
     ).find((p) => {
         return p.name === username
     })

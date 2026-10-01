@@ -44,11 +44,11 @@ Login to firebase `firebase login:ci`.
 
 ### Elm app
 
-The app is hosted on firebase so after building `elm-app build` run `yarn deploy`.
+The app is hosted on firebase so after building `elm-app build` run `npm run deploy`.
 
 ### Google functions
 
-Go to `functions` directory `yarn build` and `yarn deploy`.
+Go to `functions` directory `npm run build` and `npm run deploy`.
 
 ## A little bit about the code
 

@@ -37,8 +37,8 @@
     "@playwright/test": "1.63.0",
     "create-elm-app": "5.22.0",
     "elm": "0.19.1-6",
-    "elm-test": "0.19.1-revision9",
-    "firebase-tools": "14.16.0",
+    "elm-test": "0.19.1-revision17",
+    "firebase-tools": "15.32.1",
     "sass": "1.105.1"
   }
 }

@@ -47,7 +47,7 @@ export const createGame = async (username: string, game: any) => {
         return
     }
     functions.logger.info(
-        `User with username: ${addedUser.name} succesfully found/added: ${addedUser.id}.`
+        `User with username: ${addedUser.name} succesfully found/added: ${addedUser.id}.`,
     )
 
     // Generate secure URL-friendly unique ID
@@ -91,7 +91,7 @@ export const swapOwnerIfNeeded = async (game: Game): Promise<Game> => {
     console.log('checking if owner is offline', game.participants.players)
     const players = Object.values(game.participants.players)
     const onlineOwner = players.find(
-        (player) => player.isOwner && player.status === 'online'
+        (player) => player.isOwner && player.status === 'online',
     )
     const nextOwner =
         onlineOwner ?? players.find((player) => player.status === 'online')
@@ -101,7 +101,7 @@ export const swapOwnerIfNeeded = async (game: Game): Promise<Game> => {
     }
 
     const ownershipNeedsRepair = players.some(
-        (player) => player.isOwner !== (player.id === nextOwner.id)
+        (player) => player.isOwner !== (player.id === nextOwner.id),
     )
 
     if (!ownershipNeedsRepair) {
@@ -114,7 +114,7 @@ export const swapOwnerIfNeeded = async (game: Game): Promise<Game> => {
     await games.setOwner(
         game.id,
         players.map((player) => player.id),
-        nextOwner.id
+        nextOwner.id,
     )
     console.log('reassigned owner', nextOwner.id)
 

@@ -1,9 +1,8 @@
-import * as admin from "firebase-admin";
+import { initializeApp } from "firebase-admin/app";
+import { getDatabase } from "firebase-admin/database";
 import { GAMES_PATH, USERS_PATH } from "./constants";
 
-admin.initializeApp();
-
-const database = admin.database();
+const database = getDatabase(initializeApp());
 
 export const users = {
   add: (username: string) =>
@@ -61,7 +60,7 @@ export const games = {
         ...updates,
         [`${playerId}/isOwner`]: playerId === ownerId,
       }),
-      {}
+      {},
     );
 
     return database

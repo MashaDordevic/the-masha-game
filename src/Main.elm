@@ -217,7 +217,7 @@ playingGameUpdate msg model =
                                     if game.id == decodedGame.id then
                                         ( { model | currentGame = Playing { gameModel | game = decodedGame, isOwner = isLocalPlayerOwner, turnTimer = newTimer, isBetweenRounds = isRoundEnd } }
                                         , if isRoundEnd then
-                                            Delay.after 6500 Delay.Millisecond NextRound
+                                            Delay.after 6500 NextRound
 
                                           else
                                             Cmd.none
@@ -251,7 +251,7 @@ playingGameUpdate msg model =
 
                                     StartPlaying ->
                                         ( { model | currentGame = Playing { gameModel | isBetweenRounds = True } }
-                                        , Delay.after 6500 Delay.Millisecond NextRound
+                                        , Delay.after 6500 NextRound
                                         )
 
                                     NextRound ->
