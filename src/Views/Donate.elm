@@ -12,7 +12,7 @@ donateContent =
         [ span [] [ text "Are you enjoying the game and would like to support? 🥰" ]
         , div [ class "donate-container" ]
             [ span [] [ text "You can do so here ->" ]
-            , a [ href "https://paypal.me/masadordevic", class "donate-button" ] [ text "♡ Support" ]
+            , a [ href "https://paypal.me/masadordevic", class "donate-button" ] [ text "♥ Support" ]
             ]
         , button [ class "close-button" ] [ text "𝗫" ]
         , span [ class "feedback" ] [ text "If you have any thoughts or feedback please email to: " ]
@@ -28,6 +28,6 @@ donateView model =
 
           else
             div [ class "donate-dialog-button", onClick ToggleDonateDialog ]
-                [ span [] [ text "♡" ]
+                [ span [] [ text "♥" ]
                 ]
         ]
