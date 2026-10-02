@@ -1,6 +1,7 @@
 module State exposing (..)
 
 import Browser
+import Browser.Dom
 import Browser.Navigation
 import Game.Game exposing (Game)
 import Http
@@ -120,6 +121,7 @@ type Msg
     | GameAdded RequestId (Result Http.Error ( Game, Player ))
     | JoinedGame RequestId String (Result Http.Error JoinedGameInfo)
     | WordAdded RequestId String (Result Http.Error String)
+    | WordInputFocused (Result Browser.Dom.Error ())
     | AuthTokenChanged String
     | ReceivedUsernameFromLocalStorage String
     | NoOpResult (Result Http.Error String)

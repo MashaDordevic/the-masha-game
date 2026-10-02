@@ -15,7 +15,8 @@ if ! java -version >/dev/null 2>&1; then
 fi
 
 npm run test:functions
+npm run build
 npx firebase emulators:exec \
-  --only database,functions \
+  --only auth,database,functions,hosting \
   --project themashagame-990a8 \
   "npx playwright test"

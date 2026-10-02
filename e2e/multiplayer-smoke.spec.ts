@@ -137,7 +137,7 @@ test('keeps the mobile word form stable through reordering and ownership transfe
     nextOwnerPage
       .locator('.words-stats-container .space-between')
       .filter({ hasText: 'ALICE' })
-  ).toContainText('1')
+  ).toContainText('2')
   await expect(
     nextOwnerPage
       .locator('.words-stats-container .space-between')

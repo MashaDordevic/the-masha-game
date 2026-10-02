@@ -29,9 +29,16 @@ export const users = {
 
 export const games = {
   newId: () => database.ref(GAMES_PATH).push().key,
-  transactionRoot: (
-    update: (current: unknown) => unknown,
-  ) => database.ref().transaction(update),
+  transactionRoot: async (update: (current: unknown) => unknown) => {
+    const root = database.ref();
+    const initialSnapshot = await root.once("value");
+    const initialValue = initialSnapshot.val();
+    return root.transaction(
+      (current) => update(current ?? initialValue),
+      undefined,
+      false,
+    );
+  },
   add: (game: any) =>
     database
       .ref(GAMES_PATH)

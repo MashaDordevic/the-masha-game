@@ -2,6 +2,7 @@ port module Main exposing (..)
 
 import Api
 import Browser
+import Browser.Dom
 import Browser.Navigation as Nav
 import Constants exposing (defaultTimer)
 import Debugger.Update exposing (isOwner)
@@ -18,6 +19,7 @@ import Request
 import Route
 import State exposing (Flags, GameModel(..), LocalUser(..), Model, Msg(..))
 import String exposing (join)
+import Task
 import Time
 import Url
 import User exposing (..)
@@ -162,7 +164,9 @@ playingGameUpdate msg model =
                             else
                                 case result of
                                     Ok _ ->
-                                        ( { model | currentGame = Playing { gameModel | wordInput = "", addWordRequest = Request.idle } }, Cmd.none )
+                                        ( { model | currentGame = Playing { gameModel | wordInput = "", addWordRequest = Request.idle } }
+                                        , Task.attempt WordInputFocused (Browser.Dom.focus "word")
+                                        )
 
                                     Err _ ->
                                         ( { model | currentGame = Playing { gameModel | addWordRequest = Request.fail ( requestId, gameId ) "Could not add the word. Try again." gameModel.addWordRequest } }, Cmd.none )
@@ -353,6 +357,9 @@ update msg model =
 
         ToggleDonateDialog ->
             ( { model | isDonateDialogOpen = not model.isDonateDialogOpen }, Cmd.none )
+
+        WordInputFocused _ ->
+            ( model, Cmd.none )
 
         UrlChanged url ->
             let
@@ -657,13 +664,13 @@ update msg model =
                                 ( model, Cmd.none )
 
                             else
-                                case Request.begin ( model.nextRequestId, gameModel.game.id ) gameModel.request of
+                                case Request.begin ( model.nextRequestId, gameModel.game.gameId ) gameModel.request of
                                     Just request ->
                                         ( { model
                                             | currentGame = JoiningGame { gameModel | request = request }
                                             , nextRequestId = model.nextRequestId + 1
                                           }
-                                        , Api.joinGame model.apiUrl model.authToken model.nextRequestId gameModel.game.id gameModel.nameInput
+                                        , Api.joinGame model.apiUrl model.authToken model.nextRequestId gameModel.game.gameId gameModel.nameInput
                                         )
 
                                     Nothing ->
