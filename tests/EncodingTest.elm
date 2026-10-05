@@ -3,7 +3,7 @@ module EncodingTest exposing (suite)
 import Api
 import Dict
 import Expect
-import Game.Game exposing (Game, GameState, TurnTimer(..), emptyGameState, gameDecoder, gameEncoder, gameStateDecoder, gameStateEncoder, turnTimerDecoder, turnTimerEncoder)
+import Game.Game exposing (Game, GamePhase(..), GameState, TurnTimer(..), emptyGameState, gameDecoder, gameEncoder, gamePhaseDecoder, gamePhaseEncoder, gameStateDecoder, gameStateEncoder, turnTimerDecoder, turnTimerEncoder)
 import Game.Participants exposing (Participants, emptyParticipants, participantsDecoder, participantsEncoder)
 import Game.Status exposing (GameStatus(..), gameStatusDecoder, gameStatusEncoder)
 import Game.Teams exposing (Team, Teams, emptyTeams, teamDecoder, teamEncoder, teamsDecoder, teamsEncoder)
@@ -59,7 +59,7 @@ teams =
 
 gameState : GameState
 gameState =
-    GameState words teams 2 (NotTicking 17)
+    GameState words teams 2 (NotTicking 17) Game.Game.PlayingRound 8 Nothing Nothing
 
 
 game : Game
@@ -109,6 +109,11 @@ suite =
                     [ Ticking, NotTicking 12, Restarted 60 ]
                         |> List.map (turnTimerEncoder >> Decode.decodeValue turnTimerDecoder)
                         |> Expect.equal [ Ok Ticking, Ok (NotTicking 12), Ok (Restarted 60) ]
+            , test "game phase variants" <|
+                \_ ->
+                    [ Lobby, AddingWords, BetweenRounds, PlayingRound, GameFinished ]
+                        |> List.map (gamePhaseEncoder >> Decode.decodeValue gamePhaseDecoder)
+                        |> Expect.equal [ Ok Lobby, Ok AddingWords, Ok BetweenRounds, Ok PlayingRound, Ok GameFinished ]
             , test "users, including empty boundary strings" <|
                 \_ ->
                     roundTrip decodeUser userEncoder (User "" "")
@@ -265,6 +270,7 @@ suite =
                     Expect.all
                         [ \_ -> expectFailure gameStatusDecoder (Encode.string "archived")
                         , \_ -> expectFailure playerStatusDecoder (Encode.string "away")
+                        , \_ -> expectFailure gamePhaseDecoder (Encode.string "paused")
                         , \_ ->
                             expectFailure turnTimerDecoder
                                 (Encode.object [ ( "status", Encode.string "stopped" ) ])

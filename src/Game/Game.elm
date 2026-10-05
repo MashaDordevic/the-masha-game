@@ -7,7 +7,7 @@ import Game.Participants exposing (Participants, emptyParticipants, participants
 import Game.Status exposing (GameStatus, gameStatusDecoder, gameStatusEncoder)
 import Game.Teams exposing (Teams, emptyTeams, teamsDecoder, teamsEncoder)
 import Game.Words exposing (Words, wordsDecoder, wordsEncoder)
-import Json.Decode exposing (Decoder, field, int)
+import Json.Decode exposing (Decoder, field, float, int, string)
 import Json.Encode
 import Player exposing (Player)
 
@@ -34,21 +34,37 @@ type TurnTimer
     | Restarted Int
 
 
+type GamePhase
+    = Lobby
+    | AddingWords
+    | BetweenRounds
+    | PlayingRound
+    | GameFinished
+
+
 type alias GameState =
     { words : Words
     , teams : Teams
     , round : Int
     , turnTimer : TurnTimer
+    , phase : GamePhase
+    , revision : Int
+    , targetRound : Maybe Int
+    , deadlineMs : Maybe Float
     }
 
 
 gameStateDecoder : Decoder GameState
 gameStateDecoder =
-    Json.Decode.map4 GameState
+    Json.Decode.map8 GameState
         (optionalNullableField "words" wordsDecoder (Words [] Maybe.Nothing []))
         (optionalNullableField "teams" teamsDecoder emptyTeams)
         (field "round" int)
         (field "turnTimer" turnTimerDecoder)
+        (field "phase" gamePhaseDecoder)
+        (field "revision" int)
+        (optionalNullableField "targetRound" (Json.Decode.map Just int) Nothing)
+        (optionalNullableField "deadlineMs" (Json.Decode.map Just float) Nothing)
 
 
 gameStateEncoder : GameState -> Json.Encode.Value
@@ -58,12 +74,16 @@ gameStateEncoder gameState =
         , ( "teams", teamsEncoder gameState.teams )
         , ( "round", Json.Encode.int gameState.round )
         , ( "turnTimer", turnTimerEncoder gameState.turnTimer )
+        , ( "phase", gamePhaseEncoder gameState.phase )
+        , ( "revision", Json.Encode.int gameState.revision )
+        , ( "targetRound", Maybe.map Json.Encode.int gameState.targetRound |> Maybe.withDefault Json.Encode.null )
+        , ( "deadlineMs", Maybe.map Json.Encode.float gameState.deadlineMs |> Maybe.withDefault Json.Encode.null )
         ]
 
 
 emptyGameState : GameState
 emptyGameState =
-    GameState (Words [] Maybe.Nothing []) emptyTeams -1 (Restarted defaultTimer)
+    GameState (Words [] Maybe.Nothing []) emptyTeams -1 (Restarted defaultTimer) Lobby 0 Nothing Nothing
 
 
 createGameModel : Player -> Game
@@ -108,6 +128,52 @@ turnTimerTypeDecoder timerType =
 
         _ ->
             Json.Decode.fail "turn timer status unknown"
+
+
+gamePhaseDecoder : Decoder GamePhase
+gamePhaseDecoder =
+    string
+        |> Json.Decode.andThen
+            (\phase ->
+                case phase of
+                    "lobby" ->
+                        Json.Decode.succeed Lobby
+
+                    "addingWords" ->
+                        Json.Decode.succeed AddingWords
+
+                    "betweenRounds" ->
+                        Json.Decode.succeed BetweenRounds
+
+                    "playing" ->
+                        Json.Decode.succeed PlayingRound
+
+                    "finished" ->
+                        Json.Decode.succeed GameFinished
+
+                    _ ->
+                        Json.Decode.fail "game phase unknown"
+            )
+
+
+gamePhaseEncoder : GamePhase -> Json.Encode.Value
+gamePhaseEncoder phase =
+    Json.Encode.string <|
+        case phase of
+            Lobby ->
+                "lobby"
+
+            AddingWords ->
+                "addingWords"
+
+            BetweenRounds ->
+                "betweenRounds"
+
+            PlayingRound ->
+                "playing"
+
+            GameFinished ->
+                "finished"
 
 
 

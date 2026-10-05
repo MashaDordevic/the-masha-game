@@ -4,7 +4,7 @@ import Debugger.Update
 import Dict
 import Expect
 import Fixtures.Game
-import Game.Game exposing (createGameModel)
+import Game.Game exposing (GamePhase(..), createGameModel)
 import Main
 import Player exposing (Player, PlayerStatus(..))
 import Request
@@ -42,4 +42,84 @@ suite =
                     |> .players
                     |> Dict.member "2"
                     |> Expect.equal False
+        , test "starts a local animation from a committed interstitial" <|
+            \_ ->
+                let
+                    game =
+                        Player "owner" "OWNER" Online True
+                            |> createGameModel
+
+                    state =
+                        game.state
+
+                    betweenRoundsGame =
+                        { game
+                            | state =
+                                { state
+                                    | phase = BetweenRounds
+                                    , revision = 3
+                                    , targetRound = Just 2
+                                }
+                        }
+                in
+                Main.betweenRoundsAnimation betweenRoundsGame
+                    |> Expect.equal
+                        (Just
+                            { revision = 3
+                            , targetRound = 2
+                            }
+                        )
+        , test "does not invent an animation without a target round" <|
+            \_ ->
+                let
+                    game =
+                        Player "owner" "OWNER" Online True
+                            |> createGameModel
+
+                    state =
+                        game.state
+                in
+                Main.betweenRoundsAnimation
+                    { game
+                        | state =
+                            { state
+                                | phase = BetweenRounds
+                                , targetRound = Nothing
+                            }
+                    }
+                    |> Expect.equal Nothing
+        , test "keeps an active animation after shared gameplay advances" <|
+            \_ ->
+                let
+                    game =
+                        Player "owner" "OWNER" Online True
+                            |> createGameModel
+
+                    animation =
+                        { revision = 3, targetRound = 2 }
+                in
+                Main.animationAfterGameChange Nothing (Just animation) game
+                    |> Expect.equal (Just animation)
+        , test "does not restart an animation the client already finished" <|
+            \_ ->
+                let
+                    game =
+                        Player "owner" "OWNER" Online True
+                            |> createGameModel
+
+                    state =
+                        game.state
+
+                    betweenRoundsGame =
+                        { game
+                            | state =
+                                { state
+                                    | phase = BetweenRounds
+                                    , revision = 3
+                                    , targetRound = Just 2
+                                }
+                        }
+                in
+                Main.animationAfterGameChange (Just 3) Nothing betweenRoundsGame
+                    |> Expect.equal Nothing
         ]

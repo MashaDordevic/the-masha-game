@@ -3,8 +3,10 @@ const test = require('node:test')
 
 const {
     addWordMutation,
+    advanceRoundMutation,
     createGameMutation,
     deleteWordMutation,
+    enterBetweenRoundsMutation,
     joinGameMutation,
     updateGameMutation,
 } = require('../lib/gameMutations.js')
@@ -17,18 +19,27 @@ const player = (id, name, isOwner = false, role = 'player') => ({
     status: 'online',
 })
 
-const game = (round, players) => ({
+const phaseForRound = (round) =>
+    round < 0 ? 'lobby' : round === 0 ? 'addingWords' : 'playing'
+
+const game = (round, players, overrides = {}) => ({
     creator: 'OWNER',
     defaultTimer: 60,
     gameId: 'ABCDE',
     participants: { players },
+    status: 'running',
+    ...overrides,
     state: {
         round,
+        phase: phaseForRound(round),
+        revision: 0,
+        targetRound: null,
+        deadlineMs: null,
         teams: { current: null, next: [] },
         turnTimer: { status: 'restarted', value: 60 },
         words: { guessed: {}, next: {} },
+        ...overrides.state,
     },
-    status: 'running',
 })
 
 const rootAtRoundZero = () => ({
@@ -36,12 +47,6 @@ const rootAtRoundZero = () => ({
         game: game(0, { owner: player('owner', 'OWNER', true) }),
     },
     gameAuthorizations: { game: { owner: 'owner-uid' } },
-})
-
-const proposedRoundOne = (root) => ({
-    ...root.games.game,
-    id: 'game',
-    state: { ...root.games.game.state, round: 1 },
 })
 
 const createInput = (overrides = {}) => ({
@@ -112,20 +117,21 @@ test('serializes join before team creation without losing the player', () => {
         word: 'ARRIVAL',
     }
 
-    const advanced = updateGameMutation(
-        joined.root,
-        proposedRoundOne(joined.root),
-        'owner-uid'
-    )
-    assert.equal(advanced.committed, true)
-    assert.equal(advanced.value.game.participants.players.late.role, 'player')
+    const entered = enterBetweenRoundsMutation(joined.root, {
+        gameId: 'game',
+        uid: 'owner-uid',
+        expectedRevision: 0,
+        nowMs: 100,
+    })
+    assert.equal(entered.committed, true)
+    assert.equal(entered.value.game.participants.players.late.role, 'player')
     assert.equal(
-        advanced.value.game.state.words.next.late.word,
+        entered.value.game.state.words.next.late.word,
         'ARRIVAL'
     )
     const teams = [
-        advanced.value.game.state.teams.current,
-        ...advanced.value.game.state.teams.next,
+        entered.value.game.state.teams.current,
+        ...entered.value.game.state.teams.next,
     ]
     assert.equal(
         teams.some((team) =>
@@ -137,15 +143,21 @@ test('serializes join before team creation without losing the player', () => {
 
 test('serializes team creation before join as an authoritative watcher', () => {
     const initial = rootAtRoundZero()
-    const advanced = updateGameMutation(
-        initial,
-        proposedRoundOne(initial),
-        'owner-uid'
-    )
-    assert.equal(advanced.committed, true)
+    initial.games.game.state.words.next.word = {
+        id: 'word',
+        player: 'OWNER',
+        word: 'TABLE',
+    }
+    const entered = enterBetweenRoundsMutation(initial, {
+        gameId: 'game',
+        uid: 'owner-uid',
+        expectedRevision: 0,
+        nowMs: 100,
+    })
+    assert.equal(entered.committed, true)
 
     const joined = joinGameMutation(
-        advanced.root,
+        entered.root,
         'game',
         player('late', 'LATE'),
         'late-uid'
@@ -235,4 +247,245 @@ test('rejects legacy games with missing state or round explicitly', () => {
         ),
         { committed: false, reason: 'incompatible-game' }
     )
+})
+
+test('allows any authenticated player to enter the first interstitial once', () => {
+    const root = rootAtRoundZero()
+    root.games.game.participants.players.friend = player('friend', 'FRIEND')
+    root.gameAuthorizations.game.friend = 'friend-uid'
+    root.games.game.state.words.next.word = {
+        id: 'word',
+        player: 'OWNER',
+        word: 'TABLE',
+    }
+
+    const entered = enterBetweenRoundsMutation(root, {
+        gameId: 'game',
+        uid: 'friend-uid',
+        expectedRevision: 0,
+        nowMs: 1_000,
+    })
+    assert.equal(entered.committed, true)
+    assert.equal(entered.value.game.state.phase, 'betweenRounds')
+    assert.equal(entered.value.game.state.revision, 1)
+    assert.equal(entered.value.game.state.targetRound, 1)
+    assert.equal(entered.value.game.state.deadlineMs, 8_500)
+
+    assert.deepEqual(
+        enterBetweenRoundsMutation(entered.root, {
+            gameId: 'game',
+            uid: 'friend-uid',
+            expectedRevision: 0,
+            nowMs: 1_001,
+        }),
+        { committed: false, reason: 'conflict' }
+    )
+})
+
+test('rejects watcher transition commands', () => {
+    const root = rootAtRoundZero()
+    root.games.game.participants.players.watcher = player(
+        'watcher',
+        'WATCHER',
+        false,
+        'watcher'
+    )
+    root.gameAuthorizations.game.watcher = 'watcher-uid'
+    root.games.game.state.words.next.word = {
+        id: 'word',
+        player: 'OWNER',
+        word: 'TABLE',
+    }
+
+    assert.deepEqual(
+        enterBetweenRoundsMutation(root, {
+            gameId: 'game',
+            uid: 'watcher-uid',
+            expectedRevision: 0,
+            nowMs: 1_000,
+        }),
+        { committed: false, reason: 'forbidden' }
+    )
+})
+
+test('advances after the deadline and rejects early or duplicate requests', () => {
+    const root = rootAtRoundZero()
+    root.games.game.state.words.next.word = {
+        id: 'word',
+        player: 'OWNER',
+        word: 'TABLE',
+    }
+    const entered = enterBetweenRoundsMutation(root, {
+        gameId: 'game',
+        uid: 'owner-uid',
+        expectedRevision: 0,
+        nowMs: 1_000,
+    })
+    assert.equal(entered.committed, true)
+
+    assert.deepEqual(
+        advanceRoundMutation(entered.root, {
+            gameId: 'game',
+            uid: 'owner-uid',
+            expectedRevision: 1,
+            nowMs: 8_499,
+        }),
+        { committed: false, reason: 'conflict' }
+    )
+
+    const advanced = advanceRoundMutation(entered.root, {
+        gameId: 'game',
+        uid: 'owner-uid',
+        expectedRevision: 1,
+        nowMs: 8_500,
+    })
+    assert.equal(advanced.committed, true)
+    assert.equal(advanced.value.game.state.round, 1)
+    assert.equal(advanced.value.game.state.phase, 'playing')
+    assert.equal(advanced.value.game.state.revision, 2)
+    assert.equal(advanced.value.game.state.targetRound, null)
+    assert.equal(advanced.value.game.state.deadlineMs, null)
+
+    assert.deepEqual(
+        advanceRoundMutation(advanced.root, {
+            gameId: 'game',
+            uid: 'owner-uid',
+            expectedRevision: 1,
+            nowMs: 9_000,
+        }),
+        { committed: false, reason: 'conflict' }
+    )
+})
+
+test('resumes an overdue transition after every player was marked offline', () => {
+    const root = rootAtRoundZero()
+    root.games.game.state.words.next.word = {
+        id: 'word',
+        player: 'OWNER',
+        word: 'TABLE',
+    }
+    const entered = enterBetweenRoundsMutation(root, {
+        gameId: 'game',
+        uid: 'owner-uid',
+        expectedRevision: 0,
+        nowMs: 1_000,
+    })
+    assert.equal(entered.committed, true)
+    entered.root.games.game.participants.players.owner.status = 'offline'
+
+    const resumed = advanceRoundMutation(entered.root, {
+        gameId: 'game',
+        uid: 'owner-uid',
+        expectedRevision: 1,
+        nowMs: 20_000,
+    })
+    assert.equal(resumed.committed, true)
+    assert.equal(resumed.value.game.state.phase, 'playing')
+    assert.equal(resumed.value.game.state.round, 1)
+})
+
+test('enters later interstitials only after a round ends and restarts words', () => {
+    const root = rootAtRoundZero()
+    root.games.game = game(1, {
+        owner: player('owner', 'OWNER', true),
+        friend: player('friend', 'FRIEND'),
+    })
+    root.gameAuthorizations.game.friend = 'friend-uid'
+    root.games.game.state.words.guessed.word = {
+        id: 'word',
+        player: 'OWNER',
+        word: 'TABLE',
+    }
+
+    const entered = enterBetweenRoundsMutation(root, {
+        gameId: 'game',
+        uid: 'friend-uid',
+        expectedRevision: 0,
+        nowMs: 1_000,
+    })
+    assert.equal(entered.committed, true)
+    assert.equal(entered.value.game.state.targetRound, 2)
+
+    const advanced = advanceRoundMutation(entered.root, {
+        gameId: 'game',
+        uid: 'friend-uid',
+        expectedRevision: 1,
+        nowMs: 8_500,
+    })
+    assert.equal(advanced.committed, true)
+    assert.equal(advanced.value.game.state.round, 2)
+    assert.deepEqual(advanced.value.game.state.words.guessed, {})
+    assert.equal(advanced.value.game.state.words.next.word.word, 'TABLE')
+})
+
+test('finishes the game through the final interstitial', () => {
+    const root = rootAtRoundZero()
+    root.games.game = game(3, {
+        owner: player('owner', 'OWNER', true),
+    })
+    const entered = enterBetweenRoundsMutation(root, {
+        gameId: 'game',
+        uid: 'owner-uid',
+        expectedRevision: 0,
+        nowMs: 1_000,
+    })
+    assert.equal(entered.committed, true)
+
+    const advanced = advanceRoundMutation(entered.root, {
+        gameId: 'game',
+        uid: 'owner-uid',
+        expectedRevision: 1,
+        nowMs: 8_500,
+    })
+    assert.equal(advanced.committed, true)
+    assert.equal(advanced.value.game.status, 'finished')
+    assert.equal(advanced.value.game.state.round, 4)
+    assert.equal(advanced.value.game.state.phase, 'finished')
+})
+
+test('protects transition-owned state from legacy full-game updates', () => {
+    const root = rootAtRoundZero()
+    root.games.game.state.words.next.word = {
+        id: 'word',
+        player: 'OWNER',
+        word: 'TABLE',
+    }
+    const entered = enterBetweenRoundsMutation(root, {
+        gameId: 'game',
+        uid: 'owner-uid',
+        expectedRevision: 0,
+        nowMs: 1_000,
+    })
+    assert.equal(entered.committed, true)
+
+    const staleProposal = {
+        ...entered.value.game,
+        id: 'game',
+        state: {
+            ...entered.value.game.state,
+            phase: 'playing',
+            revision: 99,
+        },
+    }
+    assert.deepEqual(
+        updateGameMutation(entered.root, staleProposal, 'owner-uid'),
+        { committed: false, reason: 'conflict' }
+    )
+})
+
+test('moves the owner-started lobby into word entry with a new revision', () => {
+    const root = rootAtRoundZero()
+    root.games.game = game(-1, {
+        owner: player('owner', 'OWNER', true),
+    })
+    const proposal = {
+        ...root.games.game,
+        id: 'game',
+        state: { ...root.games.game.state, round: 0 },
+    }
+
+    const started = updateGameMutation(root, proposal, 'owner-uid')
+    assert.equal(started.committed, true)
+    assert.equal(started.value.game.state.phase, 'addingWords')
+    assert.equal(started.value.game.state.revision, 1)
 })

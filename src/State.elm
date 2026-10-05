@@ -25,6 +25,12 @@ type LocalUser
     | LocalWatcher Player
 
 
+type alias BetweenRoundsAnimation =
+    { revision : Int
+    , targetRound : Int
+    }
+
+
 type alias PlayingGameModel =
     { localUser : LocalUser
     , game : Game
@@ -32,7 +38,11 @@ type alias PlayingGameModel =
     , wordInput : String
     , addWordRequest : Request.State ( RequestId, String ) String
     , turnTimer : Int
-    , isBetweenRounds : Bool
+    , betweenRoundsAnimation : Maybe BetweenRoundsAnimation
+    , completedBetweenRoundsRevision : Maybe Int
+    , isStartConfirmationOpen : Bool
+    , isStartRequestPending : Bool
+    , startRequestError : Maybe String
     , isDebugFixture : Bool
     }
 
@@ -100,8 +110,12 @@ type Msg
     | UpdateWordInput String
     | UpdatePinInput String
     | AddWord
-    | NextRound
-    | StartPlaying
+    | OpenStartConfirmation
+    | CancelStartConfirmation
+    | ConfirmStartPlaying
+    | StartBetweenRoundsCompleted (Result Http.Error String)
+    | BetweenRoundsAnimationFinished Int
+    | TransitionTick Time.Posix
     | DeleteWord String
     | QuitGame
     | TimerTick Time.Posix

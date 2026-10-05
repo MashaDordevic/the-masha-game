@@ -1,4 +1,10 @@
 export type ParticipantRole = "player" | "watcher";
+export type GamePhase =
+  | "lobby"
+  | "addingWords"
+  | "betweenRounds"
+  | "playing"
+  | "finished";
 
 type StoredPlayer = Player & { role?: ParticipantRole };
 type StoredGame = Omit<Game, "id" | "participants" | "state"> & {
@@ -7,6 +13,10 @@ type StoredGame = Omit<Game, "id" | "participants" | "state"> & {
   };
   state?: {
     round?: unknown;
+    phase?: unknown;
+    revision?: unknown;
+    targetRound?: unknown;
+    deadlineMs?: unknown;
     words?: {
       current?: Word | null;
       next?: Record<string, Word>;
@@ -31,6 +41,8 @@ type MutationFailure =
   | "forbidden"
   | "incompatible-game"
   | "not-found";
+
+const BETWEEN_ROUNDS_DURATION_MS = 7_500;
 
 export type MutationResult<T> =
   | { committed: true; root: DatabaseRoot; value: T }
@@ -95,9 +107,18 @@ export const createGameMutation = (
   const createdGame = {
     ...gameWithoutId,
     gameId: input.publicGameId,
+    status: "open",
     participants: {
       ...input.game.participants,
-      players: { [player.id]: player },
+      players: { [player.id]: { ...player, role: "player" } },
+    },
+    state: {
+      ...input.game.state,
+      round: -1,
+      phase: "lobby",
+      revision: 0,
+      targetRound: null,
+      deadlineMs: null,
     },
   } as StoredGame;
 
@@ -144,11 +165,52 @@ const gameRound = (game: StoredGame): number | null => {
   return typeof round === "number" && Number.isInteger(round) ? round : null;
 };
 
+const gamePhase = (game: StoredGame): GamePhase | null => {
+  const phase = game.state?.phase;
+  return phase === "lobby" ||
+    phase === "addingWords" ||
+    phase === "betweenRounds" ||
+    phase === "playing" ||
+    phase === "finished"
+    ? phase
+    : null;
+};
+
+const gameRevision = (game: StoredGame): number | null => {
+  const revision = game.state?.revision;
+  return typeof revision === "number" &&
+    Number.isInteger(revision) &&
+    revision >= 0
+    ? revision
+    : null;
+};
+
+const transitionFacts = (
+  game: StoredGame,
+): { phase: GamePhase; revision: number; round: number } | null => {
+  const phase = gamePhase(game);
+  const revision = gameRevision(game);
+  const round = gameRound(game);
+  return phase && revision !== null && round !== null
+    ? { phase, revision, round }
+    : null;
+};
+
 export const roleForRound = (round: unknown): ParticipantRole | null => {
   if (typeof round !== "number" || !Number.isInteger(round)) {
     return null;
   }
   return round <= 0 ? "player" : "watcher";
+};
+
+const roleForNewParticipant = (game: StoredGame): ParticipantRole | null => {
+  const facts = transitionFacts(game);
+  if (!facts) {
+    return null;
+  }
+  return facts.phase === "lobby" || facts.phase === "addingWords"
+    ? "player"
+    : "watcher";
 };
 
 const teamPlayers = (game: StoredGame): StoredPlayer[] => {
@@ -214,8 +276,8 @@ export const joinGameMutation = (
   if (!root || !game) {
     return { committed: false, reason: "not-found" };
   }
-  const roleForNewParticipant = roleForRound(game.state?.round);
-  if (!roleForNewParticipant) {
+  const newParticipantRole = roleForNewParticipant(game);
+  if (!newParticipantRole) {
     return { committed: false, reason: "incompatible-game" };
   }
 
@@ -236,7 +298,7 @@ export const joinGameMutation = (
     return { committed: false, reason: "forbidden" };
   }
 
-  const role = existing ? existingRole(game, existing) : roleForNewParticipant;
+  const role = existing ? existingRole(game, existing) : newParticipantRole;
   if (!role) {
     return { committed: false, reason: "incompatible-game" };
   }
@@ -296,6 +358,37 @@ const wordsForFirstRound = (game: StoredGame) => {
   };
 };
 
+const wordsForNextRound = (game: StoredGame) => {
+  const words = game.state?.words ?? {};
+  const allWords = {
+    ...(words.guessed ?? {}),
+    ...(words.current?.id ? { [words.current.id]: words.current } : {}),
+    ...(words.next ?? {}),
+  };
+  return {
+    ...words,
+    current: null,
+    guessed: {},
+    next: allWords,
+  };
+};
+
+const isRoundEnd = (game: StoredGame): boolean =>
+  (game.state?.words?.current === null ||
+    game.state?.words?.current === undefined) &&
+  Object.keys(game.state?.words?.next ?? {}).length === 0;
+
+const transitionState = (
+  current: StoredGame,
+  proposedState: NonNullable<StoredGame["state"]>,
+) => ({
+  ...proposedState,
+  phase: current.state?.phase,
+  revision: current.state?.revision,
+  targetRound: current.state?.targetRound ?? null,
+  deadlineMs: current.state?.deadlineMs ?? null,
+});
+
 export const updateGameMutation = (
   root: DatabaseRoot | null,
   proposedGame: Game,
@@ -316,31 +409,43 @@ export const updateGameMutation = (
   }
 
   const currentRound = gameRound(current);
-  const proposedRound = roleForRound(proposedGame.state?.round)
-    ? proposedGame.state.round
-    : null;
-  if (currentRound === null || proposedRound === null) {
+  const proposedRound =
+    typeof proposedGame.state?.round === "number" &&
+    Number.isInteger(proposedGame.state.round)
+      ? proposedGame.state.round
+      : null;
+  const facts = transitionFacts(current);
+  if (currentRound === null || proposedRound === null || !facts) {
     return { committed: false, reason: "incompatible-game" };
   }
-  if (
-    proposedRound < currentRound ||
-    proposedRound > currentRound + 1
-  ) {
+  if (facts.phase === "betweenRounds") {
     return { committed: false, reason: "conflict" };
   }
 
   const { id: _id, ...storedProposal } = proposedGame;
   const participants = current.participants;
-  const state =
-    currentRound === 0 && proposedRound === 1
-      ? {
-          ...current.state,
-          round: 1,
-          teams: createTeams(participants.players),
-          words: wordsForFirstRound(current),
-        }
-      : storedProposal.state;
-  const updatedGame = { ...storedProposal, participants, state } as StoredGame;
+  const startsWordEntry =
+    facts.phase === "lobby" &&
+    currentRound === -1 &&
+    proposedRound === 0;
+  if (proposedRound !== currentRound && !startsWordEntry) {
+    return { committed: false, reason: "conflict" };
+  }
+  const state = startsWordEntry
+    ? {
+        ...storedProposal.state,
+        round: 0,
+        phase: "addingWords",
+        revision: facts.revision + 1,
+        targetRound: null,
+        deadlineMs: null,
+      }
+    : transitionState(current, storedProposal.state);
+  const updatedGame = {
+    ...storedProposal,
+    participants,
+    state,
+  } as StoredGame;
 
   return {
     committed: true,
@@ -350,6 +455,13 @@ export const updateGameMutation = (
     },
     value: { game: updatedGame },
   };
+};
+
+type RoundTransitionInput = {
+  gameId: string;
+  uid: string;
+  expectedRevision: number;
+  nowMs: number;
 };
 
 const authorizedParticipant = (
@@ -365,6 +477,134 @@ const authorizedParticipant = (
   return playerId ? game?.participants?.players?.[playerId] ?? null : null;
 };
 
+const authorizedPlayer = (
+  root: DatabaseRoot,
+  gameId: string,
+  uid: string,
+): StoredPlayer | null => {
+  const participant = authorizedParticipant(root, gameId, uid);
+  const game = root.games?.[gameId];
+  return participant && game && existingRole(game, participant) === "player"
+    ? participant
+    : null;
+};
+
+export const enterBetweenRoundsMutation = (
+  root: DatabaseRoot | null,
+  input: RoundTransitionInput,
+): MutationResult<{ game: StoredGame }> => {
+  const game = root?.games?.[input.gameId];
+  if (!root || !game) {
+    return { committed: false, reason: "not-found" };
+  }
+  const facts = transitionFacts(game);
+  if (!facts) {
+    return { committed: false, reason: "incompatible-game" };
+  }
+  if (!authorizedPlayer(root, input.gameId, input.uid)) {
+    return { committed: false, reason: "forbidden" };
+  }
+  if (facts.revision !== input.expectedRevision) {
+    return { committed: false, reason: "conflict" };
+  }
+
+  const startsFirstRound =
+    facts.phase === "addingWords" &&
+    facts.round === 0 &&
+    Object.keys(game.state?.words?.next ?? {}).length > 0;
+  const endsPlayingRound =
+    facts.phase === "playing" &&
+    facts.round >= 1 &&
+    facts.round <= 3 &&
+    isRoundEnd(game);
+  if (!startsFirstRound && !endsPlayingRound) {
+    return { committed: false, reason: "conflict" };
+  }
+
+  const targetRound = facts.round + 1;
+  const updatedGame = {
+    ...game,
+    state: {
+      ...game.state,
+      ...(startsFirstRound
+        ? {
+            teams: createTeams(game.participants.players),
+            words: wordsForFirstRound(game),
+          }
+        : {}),
+      phase: "betweenRounds",
+      revision: facts.revision + 1,
+      targetRound,
+      deadlineMs: input.nowMs + BETWEEN_ROUNDS_DURATION_MS,
+    },
+  } as StoredGame;
+  return {
+    committed: true,
+    root: {
+      ...root,
+      games: { ...(root.games ?? {}), [input.gameId]: updatedGame },
+    },
+    value: { game: updatedGame },
+  };
+};
+
+export const advanceRoundMutation = (
+  root: DatabaseRoot | null,
+  input: RoundTransitionInput,
+): MutationResult<{ game: StoredGame }> => {
+  const game = root?.games?.[input.gameId];
+  if (!root || !game) {
+    return { committed: false, reason: "not-found" };
+  }
+  const facts = transitionFacts(game);
+  if (!facts) {
+    return { committed: false, reason: "incompatible-game" };
+  }
+  if (!authorizedPlayer(root, input.gameId, input.uid)) {
+    return { committed: false, reason: "forbidden" };
+  }
+  const targetRound = game.state?.targetRound;
+  const deadlineMs = game.state?.deadlineMs;
+  if (
+    facts.phase !== "betweenRounds" ||
+    facts.revision !== input.expectedRevision ||
+    typeof targetRound !== "number" ||
+    !Number.isInteger(targetRound) ||
+    targetRound !== facts.round + 1 ||
+    typeof deadlineMs !== "number"
+  ) {
+    return { committed: false, reason: "conflict" };
+  }
+  if (input.nowMs < deadlineMs) {
+    return { committed: false, reason: "conflict" };
+  }
+
+  const finished = targetRound === 4;
+  const updatedGame = {
+    ...game,
+    status: finished ? "finished" : game.status,
+    state: {
+      ...game.state,
+      round: targetRound,
+      ...(targetRound === 2 || targetRound === 3
+        ? { words: wordsForNextRound(game) }
+        : {}),
+      phase: finished ? "finished" : "playing",
+      revision: facts.revision + 1,
+      targetRound: null,
+      deadlineMs: null,
+    },
+  } as StoredGame;
+  return {
+    committed: true,
+    root: {
+      ...root,
+      games: { ...(root.games ?? {}), [input.gameId]: updatedGame },
+    },
+    value: { game: updatedGame },
+  };
+};
+
 export const addWordMutation = (
   root: DatabaseRoot | null,
   gameId: string,
@@ -376,10 +616,11 @@ export const addWordMutation = (
     return { committed: false, reason: "not-found" };
   }
   const round = gameRound(game);
-  if (round === null) {
+  const phase = gamePhase(game);
+  if (round === null || !phase) {
     return { committed: false, reason: "incompatible-game" };
   }
-  if (round !== 0) {
+  if (round !== 0 || phase !== "addingWords") {
     return { committed: false, reason: "conflict" };
   }
   const participant = authorizedParticipant(root, gameId, uid);
@@ -423,10 +664,11 @@ export const deleteWordMutation = (
     return { committed: false, reason: "not-found" };
   }
   const round = gameRound(game);
-  if (round === null) {
+  const phase = gamePhase(game);
+  if (round === null || !phase) {
     return { committed: false, reason: "incompatible-game" };
   }
-  if (round !== 0) {
+  if (round !== 0 || phase !== "addingWords") {
     return { committed: false, reason: "conflict" };
   }
   const participant = authorizedParticipant(root, gameId, uid);

@@ -116,6 +116,170 @@ init flags url navKey =
     )
 
 
+betweenRoundsAnimation : Game -> Maybe State.BetweenRoundsAnimation
+betweenRoundsAnimation game =
+    case ( game.state.phase, game.state.targetRound ) of
+        ( BetweenRounds, Just targetRound ) ->
+            Just
+                { revision = game.state.revision
+                , targetRound = targetRound
+                }
+
+        _ ->
+            Nothing
+
+
+startBetweenRoundsAnimation : Game -> ( Maybe State.BetweenRoundsAnimation, Cmd Msg )
+startBetweenRoundsAnimation game =
+    case betweenRoundsAnimation game of
+        Just animation ->
+            ( Just animation
+            , Delay.after 7500 (BetweenRoundsAnimationFinished animation.revision)
+            )
+
+        Nothing ->
+            ( Nothing, Cmd.none )
+
+
+animationAfterGameChange : Maybe Int -> Maybe State.BetweenRoundsAnimation -> Game -> Maybe State.BetweenRoundsAnimation
+animationAfterGameChange completedRevision currentAnimation game =
+    case currentAnimation of
+        Just _ ->
+            currentAnimation
+
+        Nothing ->
+            case betweenRoundsAnimation game of
+                Just animation ->
+                    if completedRevision == Just animation.revision then
+                        Nothing
+
+                    else
+                        Just animation
+
+                Nothing ->
+                    Nothing
+
+
+requestDueTransition : Model -> State.PlayingGameModel -> Cmd Msg
+requestDueTransition model gameModel =
+    case gameModel.localUser of
+        LocalWatcher _ ->
+            Cmd.none
+
+        LocalPlayer _ ->
+            let
+                game =
+                    gameModel.game
+            in
+            case game.state.phase of
+                PlayingRound ->
+                    if Game.Gameplay.isRoundEnd game.state then
+                        Api.enterBetweenRounds model.apiUrl model.authToken game.id game.state.revision
+
+                    else
+                        Cmd.none
+
+                BetweenRounds ->
+                    if gameModel.betweenRoundsAnimation == Nothing then
+                        Api.advanceRound model.apiUrl model.authToken game.id game.state.revision
+
+                    else
+                        Cmd.none
+
+                _ ->
+                    Cmd.none
+
+
+gameChangedUpdate : Json.Decode.Value -> Model -> State.PlayingGameModel -> ( Model, Cmd Msg )
+gameChangedUpdate value model gameModel =
+    case Json.Decode.decodeValue gameDecoder value of
+        Ok decodedGame ->
+            if gameModel.game.id /= decodedGame.id then
+                ( model, Cmd.none )
+
+            else
+                let
+                    newTimer =
+                        case decodedGame.state.turnTimer of
+                            Ticking ->
+                                gameModel.turnTimer
+
+                            Game.Game.NotTicking timerValue ->
+                                timerValue
+
+                            Game.Game.Restarted timerValue ->
+                                timerValue
+
+                    isLocalPlayerOwner =
+                        case gameModel.localUser of
+                            LocalPlayer localPlayer ->
+                                Game.Gameplay.isPlayerOnwer decodedGame localPlayer
+
+                            LocalWatcher _ ->
+                                False
+
+                    nextAnimation =
+                        animationAfterGameChange
+                            gameModel.completedBetweenRoundsRevision
+                            gameModel.betweenRoundsAnimation
+                            decodedGame
+
+                    animationCmd =
+                        case ( gameModel.betweenRoundsAnimation, nextAnimation ) of
+                            ( Nothing, Just animation ) ->
+                                Delay.after 7500 (BetweenRoundsAnimationFinished animation.revision)
+
+                            _ ->
+                                Cmd.none
+
+                    remainsInWordEntry =
+                        decodedGame.state.phase == AddingWords
+
+                    nextGameModel =
+                        { gameModel
+                            | game = decodedGame
+                            , isOwner = isLocalPlayerOwner
+                            , turnTimer = newTimer
+                            , betweenRoundsAnimation = nextAnimation
+                            , isStartConfirmationOpen = gameModel.isStartConfirmationOpen && remainsInWordEntry
+                            , isStartRequestPending = gameModel.isStartRequestPending && remainsInWordEntry
+                            , isDebugFixture = False
+                        }
+                in
+                ( { model | currentGame = Playing nextGameModel }
+                , Cmd.batch
+                    [ animationCmd
+                    , requestDueTransition model nextGameModel
+                    ]
+                )
+
+        Err _ ->
+            ( model, Cmd.none )
+
+
+animationFinishedUpdate : Int -> Model -> State.PlayingGameModel -> ( Model, Cmd Msg )
+animationFinishedUpdate revision model gameModel =
+    case gameModel.betweenRoundsAnimation of
+        Just animation ->
+            if animation.revision == revision then
+                let
+                    nextGameModel =
+                        { gameModel
+                            | betweenRoundsAnimation = Nothing
+                            , completedBetweenRoundsRevision = Just revision
+                        }
+                in
+                ( { model | currentGame = Playing nextGameModel }
+                , requestDueTransition model nextGameModel
+                )
+
+            else
+                ( model, Cmd.none )
+
+        Nothing ->
+            ( model, Cmd.none )
+
+
 playingGameUpdate : Msg -> Model -> ( Model, Cmd Msg )
 playingGameUpdate msg model =
     case model.currentGame of
@@ -242,40 +406,44 @@ playingGameUpdate msg model =
                             )
 
                         GameChanged value ->
-                            case Json.Decode.decodeValue gameDecoder value of
-                                Ok decodedGame ->
-                                    let
-                                        newTimer =
-                                            case decodedGame.state.turnTimer of
-                                                Ticking ->
-                                                    gameModel.turnTimer
+                            gameChangedUpdate value model gameModel
 
-                                                Game.Game.NotTicking timerValue ->
-                                                    timerValue
+                        OpenStartConfirmation ->
+                            if game.state.phase == AddingWords then
+                                ( { model | currentGame = Playing { gameModel | isStartConfirmationOpen = True, startRequestError = Nothing } }, Cmd.none )
 
-                                                Game.Game.Restarted timerValue ->
-                                                    timerValue
+                            else
+                                ( model, Cmd.none )
 
-                                        isRoundEnd =
-                                            Game.Gameplay.isRoundEnd decodedGame.state && decodedGame.state.round > 0
+                        CancelStartConfirmation ->
+                            if gameModel.isStartRequestPending then
+                                ( model, Cmd.none )
 
-                                        isLocalPlayerOwner =
-                                            Game.Gameplay.isPlayerOnwer decodedGame localPlayer
-                                    in
-                                    if game.id == decodedGame.id then
-                                        ( { model | currentGame = Playing { gameModel | game = decodedGame, isOwner = isLocalPlayerOwner, turnTimer = newTimer, isBetweenRounds = isRoundEnd, isDebugFixture = False } }
-                                        , if isRoundEnd then
-                                            Delay.after 6500 NextRound
+                            else
+                                ( { model | currentGame = Playing { gameModel | isStartConfirmationOpen = False, startRequestError = Nothing } }, Cmd.none )
 
-                                          else
-                                            Cmd.none
-                                        )
+                        ConfirmStartPlaying ->
+                            if gameModel.isStartConfirmationOpen && not gameModel.isStartRequestPending && game.state.phase == AddingWords then
+                                ( { model | currentGame = Playing { gameModel | isStartRequestPending = True, startRequestError = Nothing } }
+                                , Api.startBetweenRounds model.apiUrl model.authToken game.id game.state.revision
+                                )
 
-                                    else
-                                        ( model, Cmd.none )
+                            else
+                                ( model, Cmd.none )
+
+                        StartBetweenRoundsCompleted result ->
+                            case result of
+                                Ok _ ->
+                                    ( { model | currentGame = Playing { gameModel | isStartRequestPending = False } }, Cmd.none )
 
                                 Err _ ->
-                                    ( model, Cmd.none )
+                                    ( { model | currentGame = Playing { gameModel | isStartRequestPending = False, startRequestError = Just "Could not start the game. Try again." } }, Cmd.none )
+
+                        BetweenRoundsAnimationFinished revision ->
+                            animationFinishedUpdate revision model gameModel
+
+                        TransitionTick _ ->
+                            ( model, requestDueTransition model gameModel )
 
                         _ ->
                             if gameModel.isOwner then
@@ -301,30 +469,22 @@ playingGameUpdate msg model =
                                             |> changeGame
                                         )
 
-                                    StartPlaying ->
-                                        ( { model | currentGame = Playing { gameModel | isBetweenRounds = True } }
-                                        , Delay.after 6500 NextRound
-                                        )
-
-                                    NextRound ->
-                                        let
-                                            newGame =
-                                                Game.Gameplay.nextRound game
-                                        in
-                                        ( { model | currentGame = Playing { gameModel | isBetweenRounds = False } }
-                                        , newGame
-                                            |> Game.Game.gameEncoder
-                                            |> changeGame
-                                        )
-
                                     _ ->
                                         Debugger.Update.update msg model
 
                             else
                                 Debugger.Update.update msg model
 
-                _ ->
-                    ( model, Cmd.none )
+                LocalWatcher _ ->
+                    case msg of
+                        GameChanged value ->
+                            gameChangedUpdate value model gameModel
+
+                        BetweenRoundsAnimationFinished revision ->
+                            animationFinishedUpdate revision model gameModel
+
+                        _ ->
+                            ( model, Cmd.none )
 
         _ ->
             ( model, Cmd.none )
@@ -576,7 +736,7 @@ update msg model =
                             else
                                 case result of
                                     Ok ( game, player ) ->
-                                        ( { model | currentGame = Playing { game = game, isOwner = True, localUser = LocalPlayer player, wordInput = "", addWordRequest = Request.idle, turnTimer = defaultTimer, isBetweenRounds = False, isDebugFixture = False } }
+                                        ( { model | currentGame = Playing { game = game, isOwner = True, localUser = LocalPlayer player, wordInput = "", addWordRequest = Request.idle, turnTimer = defaultTimer, betweenRoundsAnimation = Nothing, completedBetweenRoundsRevision = Nothing, isStartConfirmationOpen = False, isStartRequestPending = False, startRequestError = Nothing, isDebugFixture = False } }
                                         , Cmd.batch
                                             [ subscribeToGame
                                                 (Json.Encode.object
@@ -632,7 +792,7 @@ update msg model =
                                                     isLocalPlayerOwner =
                                                         case localUser of
                                                             LocalPlayer player ->
-                                                                Game.Gameplay.isPlayerOnwer game player
+                                                                Game.Gameplay.isPlayerOnwer joinedGameInfo.game player
 
                                                             _ ->
                                                                 False
@@ -644,8 +804,11 @@ update msg model =
 
                                                             LocalWatcher watcher ->
                                                                 watcher.name
+
+                                                    ( initialAnimation, animationCmd ) =
+                                                        startBetweenRoundsAnimation joinedGameInfo.game
                                                 in
-                                                ( { model | currentGame = Playing { localUser = localUser, isOwner = isLocalPlayerOwner, game = joinedGameInfo.game, wordInput = "", addWordRequest = Request.idle, turnTimer = defaultTimer, isBetweenRounds = False, isDebugFixture = False } }
+                                                ( { model | currentGame = Playing { localUser = localUser, isOwner = isLocalPlayerOwner, game = joinedGameInfo.game, wordInput = "", addWordRequest = Request.idle, turnTimer = defaultTimer, betweenRoundsAnimation = initialAnimation, completedBetweenRoundsRevision = Nothing, isStartConfirmationOpen = False, isStartRequestPending = False, startRequestError = Nothing, isDebugFixture = False } }
                                                 , Cmd.batch
                                                     [ subscribeToGame
                                                         (Json.Encode.object
@@ -654,6 +817,7 @@ update msg model =
                                                             ]
                                                         )
                                                     , saveUsernameToLocalStorage (Json.Encode.string localUserName)
+                                                    , animationCmd
                                                     ]
                                                 )
 
@@ -709,12 +873,33 @@ subscriptions model =
 
                 _ ->
                     Sub.none
+
+        transitionSub =
+            case model.currentGame of
+                Playing gameModel ->
+                    case gameModel.localUser of
+                        LocalWatcher _ ->
+                            Sub.none
+
+                        LocalPlayer _ ->
+                            if
+                                (gameModel.game.state.phase == PlayingRound && Game.Gameplay.isRoundEnd gameModel.game.state)
+                                    || (gameModel.game.state.phase == BetweenRounds && gameModel.betweenRoundsAnimation == Nothing)
+                            then
+                                Time.every 1000 TransitionTick
+
+                            else
+                                Sub.none
+
+                _ ->
+                    Sub.none
     in
     Sub.batch
         [ gameChanged GameChanged
         , authTokenChanged AuthTokenChanged
         , receivedUsernameFromLocalStorage ReceivedUsernameFromLocalStorage
         , timerSub
+        , transitionSub
         ]
 
 

@@ -5,7 +5,11 @@ test('keeps the mobile word form stable through reordering and ownership transfe
 }) => {
   const ownerContext = await browser.newContext({ ...devices['iPhone 13'] })
   const ownerPage = await ownerContext.newPage()
-  const nextOwnerContext = await browser.newContext()
+  const nextOwnerContext = await browser.newContext(
+    process.env.PLAYWRIGHT_VIDEO === 'on'
+      ? { recordVideo: { dir: 'test-results/manual-transition-video' } }
+      : {}
+  )
   const nextOwnerPage = await nextOwnerContext.newPage()
 
   await ownerPage.goto('/')
@@ -128,8 +132,6 @@ test('keeps the mobile word form stable through reordering and ownership transfe
   expect(scrollAfterReordering).toBe(scrollBeforeAdding)
   expect(addWordRequestCount).toBe(2)
 
-  await ownerContext.close()
-
   await expect(
     nextOwnerPage.getByRole('button', { name: "Let's play" })
   ).toBeEnabled({ timeout: 20_000 })
@@ -144,6 +146,91 @@ test('keeps the mobile word form stable through reordering and ownership transfe
       .filter({ hasText: 'CHARLIE' })
   ).toContainText('1')
 
+  await nextOwnerPage.getByRole('button', { name: "Let's play" }).click()
+  const confirmation = nextOwnerPage.getByRole('dialog', {
+    name: 'Ready to start?',
+  })
+  await expect(confirmation).toContainText(
+    'Starting now will begin the game for everyone.'
+  )
+
+  const enterTransition = nextOwnerPage.waitForResponse((response) =>
+    response.url().includes('/enterBetweenRounds')
+  )
+  await confirmation
+    .getByRole('button', { name: 'Start for everyone' })
+    .click()
+  expect((await enterTransition).ok()).toBe(true)
+
+  await expect(
+    nextOwnerPage.getByRole('heading', {
+      name: 'Hope you are soooo ready...',
+    })
+  ).toBeVisible()
+  await expect(
+    latePlayerPage.getByRole('heading', {
+      name: 'Hope you are soooo ready...',
+    })
+  ).toBeVisible()
+
+  const refreshedPlayerLookup = latePlayerPage.waitForResponse((response) =>
+    response.url().includes('/findGame')
+  )
+  await latePlayerPage.reload()
+  await refreshedPlayerLookup
+  const refreshedName = latePlayerPage.getByRole('textbox', {
+    name: 'Nickname',
+  })
+  await expect(refreshedName).toHaveValue('CHARLIE')
+  const refreshedPlayerJoin = latePlayerPage.waitForResponse((response) =>
+    response.url().includes('/joinGame')
+  )
+  await latePlayerPage.getByRole('button', { name: 'Enter' }).click()
+  expect((await refreshedPlayerJoin).ok()).toBe(true)
+  await expect(
+    latePlayerPage.getByRole('heading', {
+      name: 'Hope you are soooo ready...',
+    })
+  ).toBeVisible()
+
+  await ownerContext.close()
+
+  const watcherContext = await browser.newContext()
+  const watcherPage = await watcherContext.newPage()
+  const watcherLookup = watcherPage.waitForResponse((response) =>
+    response.url().includes('/findGame')
+  )
+  await watcherPage.goto(nextOwnerPage.url())
+  await watcherLookup
+  await watcherPage.getByRole('textbox', { name: 'Nickname' }).fill('DANA')
+  const watcherJoin = watcherPage.waitForResponse((response) =>
+    response.url().includes('/joinGame')
+  )
+  await watcherPage.getByRole('button', { name: 'Enter' }).click()
+  const watcherJoinResponse = await watcherJoin
+
+  expect((await watcherJoinResponse.json()).role).toBe('watcher')
+  await expect(
+    watcherPage.getByRole('heading', {
+      name: 'Hope you are soooo ready...',
+    })
+  ).toBeVisible()
+
+  await expect(
+    nextOwnerPage.getByRole('heading', { name: 'Round 1' })
+  ).toBeVisible({ timeout: 12_000 })
+  await expect(
+    latePlayerPage.getByRole('heading', { name: 'Round 1' })
+  ).toBeVisible({ timeout: 12_000 })
+  await expect(
+    watcherPage.getByRole('heading', { name: 'Round 1' })
+  ).toBeVisible({ timeout: 12_000 })
+
+  const transitionVideo = nextOwnerPage.video()
+  await watcherContext.close()
   await latePlayerContext.close()
   await nextOwnerContext.close()
+  await transitionVideo?.saveAs(
+    'test-results/manual-between-rounds-transition.webm'
+  )
 })

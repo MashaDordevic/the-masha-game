@@ -13,9 +13,11 @@ import {
 import { games, users } from './db'
 import {
     addWordMutation,
+    advanceRoundMutation,
     createGameMutation,
     DatabaseRoot,
     deleteWordMutation,
+    enterBetweenRoundsMutation,
     joinGameMutation,
     MutationResult,
     updateGameMutation,
@@ -269,6 +271,47 @@ export const updateGame = onAuthenticatedCorsRequest(async (request, response, u
     }
     response.send({ ...result.value.game, id: game.id })
 })
+
+const runRoundTransition = async (
+    request: functions.https.Request,
+    response: Response<any>,
+    uid: string,
+    mutate: typeof enterBetweenRoundsMutation,
+) => {
+    const { gameId, expectedRevision } = request.body
+    if (
+        typeof gameId !== 'string' ||
+        typeof expectedRevision !== 'number' ||
+        !Number.isInteger(expectedRevision) ||
+        expectedRevision < 0
+    ) {
+        response.status(400).send('gameId and a valid expectedRevision are required')
+        return
+    }
+    const result = await runRootMutation((root) =>
+        mutate(root, {
+            gameId,
+            uid,
+            expectedRevision,
+            nowMs: Date.now(),
+        }),
+    )
+    if (!result.committed) {
+        sendMutationFailure(response, result)
+        return
+    }
+    response.send({ ...result.value.game, id: gameId })
+}
+
+export const enterBetweenRounds = onAuthenticatedCorsRequest(
+    async (request, response, uid) =>
+        runRoundTransition(request, response, uid, enterBetweenRoundsMutation),
+)
+
+export const advanceRound = onAuthenticatedCorsRequest(
+    async (request, response, uid) =>
+        runRoundTransition(request, response, uid, advanceRoundMutation),
+)
 
 export const addWord = onAuthenticatedCorsRequest(async (request, response, uid) => {
     const { gameId, word } = request.body

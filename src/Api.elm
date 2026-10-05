@@ -9,6 +9,39 @@ import Player exposing (Player, playerDecoder)
 import State exposing (..)
 
 
+roundTransitionRequest : String -> String -> String -> String -> Int -> (Result Http.Error String -> Msg) -> Cmd Msg
+roundTransitionRequest apiUrl authToken gameId endpoint expectedRevision toMsg =
+    Http.request
+        { method = "POST"
+        , headers = [ Http.header "Authorization" ("Bearer " ++ authToken) ]
+        , url = apiUrl ++ "/" ++ endpoint
+        , body =
+            Http.jsonBody <|
+                Json.Encode.object
+                    [ ( "gameId", Json.Encode.string gameId )
+                    , ( "expectedRevision", Json.Encode.int expectedRevision )
+                    ]
+        , expect = Http.expectString toMsg
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+enterBetweenRounds : String -> String -> String -> Int -> Cmd Msg
+enterBetweenRounds apiUrl authToken gameId expectedRevision =
+    roundTransitionRequest apiUrl authToken gameId "enterBetweenRounds" expectedRevision NoOpResult
+
+
+advanceRound : String -> String -> String -> Int -> Cmd Msg
+advanceRound apiUrl authToken gameId expectedRevision =
+    roundTransitionRequest apiUrl authToken gameId "advanceRound" expectedRevision NoOpResult
+
+
+startBetweenRounds : String -> String -> String -> Int -> Cmd Msg
+startBetweenRounds apiUrl authToken gameId expectedRevision =
+    roundTransitionRequest apiUrl authToken gameId "enterBetweenRounds" expectedRevision StartBetweenRoundsCompleted
+
+
 deleteWord : String -> String -> String -> String -> Cmd Msg
 deleteWord apiUrl authToken gameId wordId =
     Http.request

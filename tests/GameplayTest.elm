@@ -25,7 +25,7 @@ isRoundEndSuit =
             \_ ->
                 let
                     testState =
-                        GameState (Words [] Maybe.Nothing []) emptyTeams 1 (Game.Game.NotTicking 5)
+                        GameState (Words [] Maybe.Nothing []) emptyTeams 1 (Game.Game.NotTicking 5) Game.Game.PlayingRound 0 Nothing Nothing
                 in
                 isRoundEnd testState
                     |> Expect.equal True
@@ -33,7 +33,7 @@ isRoundEndSuit =
             \_ ->
                 let
                     testState =
-                        GameState (Words [] Maybe.Nothing [ Word "" "word" "p1" ]) emptyTeams 1 (Game.Game.NotTicking 5)
+                        GameState (Words [] Maybe.Nothing [ Word "" "word" "p1" ]) emptyTeams 1 (Game.Game.NotTicking 5) Game.Game.PlayingRound 0 Nothing Nothing
                 in
                 isRoundEnd testState
                     |> Expect.equal False
@@ -41,7 +41,7 @@ isRoundEndSuit =
             \_ ->
                 let
                     testState =
-                        GameState (Words [] (Just (Word "" "word" "p1")) []) emptyTeams 1 (Game.Game.NotTicking 5)
+                        GameState (Words [] (Just (Word "" "word" "p1")) []) emptyTeams 1 (Game.Game.NotTicking 5) Game.Game.PlayingRound 0 Nothing Nothing
                 in
                 isRoundEnd testState
                     |> Expect.equal False
@@ -49,7 +49,7 @@ isRoundEndSuit =
             \_ ->
                 let
                     testState =
-                        GameState (Words [ Word "" "word" "p1" ] Maybe.Nothing []) emptyTeams -1 (Game.Game.NotTicking 5)
+                        GameState (Words [ Word "" "word" "p1" ] Maybe.Nothing []) emptyTeams -1 (Game.Game.NotTicking 5) Game.Game.Lobby 0 Nothing Nothing
                 in
                 isRoundEnd testState
                     |> Expect.equal True
@@ -66,7 +66,7 @@ isLocalPlayersTurnSuit =
                         Teams (Just (Team [ Player "1" "p1" Online False, Player "2" "p2" Online False ] 0)) [ Team [ Player "2-1" "p21" Online False, Player "2-2" "p22" Online False ] 10 ]
 
                     testState =
-                        GameState (Words [] Maybe.Nothing []) testTeams -1 (Game.Game.NotTicking 5)
+                        GameState (Words [] Maybe.Nothing []) testTeams -1 (Game.Game.NotTicking 5) Game.Game.Lobby 0 Nothing Nothing
 
                     testGame =
                         Game "" "" "ownerName" Game.Status.Open (Participants Dict.empty Dict.empty) testState 60
@@ -83,7 +83,7 @@ isLocalPlayersTurnSuit =
                         Teams (Just (Team [ Player "1" "p1" Online False, Player "2" "p2" Online False ] 0)) [ Team [ Player "2-1" "p21" Online False, Player "2-2" "p22" Online False ] 10 ]
 
                     testState =
-                        GameState (Words [] Maybe.Nothing []) testTeams -1 (Game.Game.NotTicking 5)
+                        GameState (Words [] Maybe.Nothing []) testTeams -1 (Game.Game.NotTicking 5) Game.Game.Lobby 0 Nothing Nothing
 
                     testGame =
                         Game "" "" "ownerName" Game.Status.Open (Participants Dict.empty Dict.empty) testState 60
@@ -100,7 +100,7 @@ isLocalPlayersTurnSuit =
                         Teams (Just (Team [ Player "1" "p1" Online False, Player "2" "p2" Online False ] 0)) [ Team [ Player "2-1" "p21" Online False, Player "2-2" "p22" Online False ] 10 ]
 
                     testState =
-                        GameState (Words [] Maybe.Nothing []) testTeams -1 (Game.Game.NotTicking 5)
+                        GameState (Words [] Maybe.Nothing []) testTeams -1 (Game.Game.NotTicking 5) Game.Game.Lobby 0 Nothing Nothing
 
                     testGame =
                         Game "" "" "ownerName" Game.Status.Open (Participants Dict.empty Dict.empty) testState 60
@@ -123,7 +123,7 @@ isExplainingSuit =
                         Teams (Just (Team [ Player "1" "p1" Online False, Player "2" "p2" Online False ] 0)) [ Team [ Player "2-1" "p21" Online False, Player "2-2" "p22" Online False ] 10 ]
 
                     testState =
-                        GameState (Words [] Maybe.Nothing []) testTeams -1 (Game.Game.NotTicking 5)
+                        GameState (Words [] Maybe.Nothing []) testTeams -1 (Game.Game.NotTicking 5) Game.Game.Lobby 0 Nothing Nothing
 
                     testGame =
                         Game "" "" "ownerName" Game.Status.Open (Participants Dict.empty Dict.empty) testState 60
@@ -140,7 +140,7 @@ isExplainingSuit =
                         Teams (Just (Team [ Player "1" "p1" Online False, Player "2" "p2" Online False ] 0)) [ Team [ Player "2-1" "p21" Online False, Player "2-2" "p22" Online False ] 10 ]
 
                     testState =
-                        GameState (Words [] Maybe.Nothing []) testTeams -1 (Game.Game.NotTicking 5)
+                        GameState (Words [] Maybe.Nothing []) testTeams -1 (Game.Game.NotTicking 5) Game.Game.Lobby 0 Nothing Nothing
 
                     testGame =
                         Game "" "" "ownerName" Game.Status.Open (Participants Dict.empty Dict.empty) testState 60
@@ -157,7 +157,7 @@ isExplainingSuit =
                         Teams (Just (Team [ Player "1" "p1" Online False, Player "2" "p2" Online False ] 0)) [ Team [ Player "2-1" "p21" Online False, Player "2-2" "p22" Online False ] 10 ]
 
                     testState =
-                        GameState (Words [] Maybe.Nothing []) testTeams -1 (Game.Game.NotTicking 5)
+                        GameState (Words [] Maybe.Nothing []) testTeams -1 (Game.Game.NotTicking 5) Game.Game.Lobby 0 Nothing Nothing
 
                     testGame =
                         Game "" "" "ownerName" Game.Status.Open (Participants Dict.empty Dict.empty) testState 60
@@ -180,7 +180,7 @@ nextRoundSuit =
                         Dict.fromList [ ( "1", Player "1" "p1" Online False ), ( "2", Player "2" "p2" Online False ), ( "2-1", Player "2-1" "p21" Online False ), ( "2-2", Player "2-2" "p22" Online False ) ]
 
                     testState =
-                        GameState (Words [] Maybe.Nothing []) emptyTeams 0 (Game.Game.NotTicking 5)
+                        GameState (Words [] Maybe.Nothing []) emptyTeams 0 (Game.Game.NotTicking 5) Game.Game.AddingWords 1 Nothing Nothing
 
                     testGame =
                         Game "" "" "ownerName" Game.Status.Open (Participants testPlayers Dict.empty) testState 60
@@ -205,7 +205,7 @@ nextRoundSuit =
                         Teams (Just (Team [ Player "1" "p1" Online False, Player "2" "p2" Online False ] 0)) [ Team [ Player "2-1" "p21" Online False, Player "2-2" "p22" Online False ] 10 ]
 
                     testState =
-                        GameState (Words [] Maybe.Nothing wordsList) testTeams -1 (Game.Game.NotTicking 5)
+                        GameState (Words [] Maybe.Nothing wordsList) testTeams -1 (Game.Game.NotTicking 5) Game.Game.Lobby 0 Nothing Nothing
 
                     testGame =
                         Game "" "" "ownerName" Game.Status.Open (Participants Dict.empty Dict.empty) testState 60
@@ -228,7 +228,7 @@ nextRoundSuit =
                         Teams (Just (Team [ Player "1" "p1" Online False, Player "2" "p2" Online False ] 0)) [ Team [ Player "2-1" "p21" Online False, Player "2-2" "p22" Online False ] 10 ]
 
                     testState =
-                        GameState (Words wordsList Maybe.Nothing []) testTeams 1 (Game.Game.NotTicking 60)
+                        GameState (Words wordsList Maybe.Nothing []) testTeams 1 (Game.Game.NotTicking 60) Game.Game.PlayingRound 2 Nothing Nothing
 
                     testGame =
                         Game "" "" "ownerName" Game.Status.Open (Participants Dict.empty Dict.empty) testState 60
@@ -265,7 +265,7 @@ endOfExplainingSuit =
                         Teams (Just (Team [ Player "2-1" "p21" Online False, Player "2-2" "p22" Online False ] 10)) [ Team [ Player "2" "p2" Online False, Player "1" "p1" Online False ] 0 ]
 
                     testState =
-                        GameState (Words [] (Just (Word "d" "player2" "")) wordsList) testTeams 1 (Game.Game.NotTicking 60)
+                        GameState (Words [] (Just (Word "d" "player2" "")) wordsList) testTeams 1 (Game.Game.NotTicking 60) Game.Game.PlayingRound 2 Nothing Nothing
 
                     testGame =
                         Game "" "" "ownerName" Game.Status.Open (Participants Dict.empty Dict.empty) testState 60
@@ -342,7 +342,7 @@ switchTimerSuit =
             \_ ->
                 let
                     testState =
-                        GameState (Words [] Maybe.Nothing [ Word "d" "player2" "" ]) Game.Teams.emptyTeams 1 (Game.Game.Restarted 30)
+                        GameState (Words [] Maybe.Nothing [ Word "d" "player2" "" ]) Game.Teams.emptyTeams 1 (Game.Game.Restarted 30) Game.Game.PlayingRound 2 Nothing Nothing
 
                     testGame =
                         Game "" "" "ownerName" Game.Status.Open (Participants Dict.empty Dict.empty) testState 60
@@ -371,7 +371,7 @@ guessWordSuit =
                         Teams (Just (Team [ Player "1" "p1" Online False, Player "2" "p2" Online False ] 3)) [ Team [ Player "2-1" "p21" Online False, Player "2-2" "p22" Online False ] 10 ]
 
                     testState =
-                        GameState (Words [] (Just (Word "d" "player2" "")) wordsList) testTeams 1 Game.Game.Ticking
+                        GameState (Words [] (Just (Word "d" "player2" "")) wordsList) testTeams 1 Game.Game.Ticking Game.Game.PlayingRound 2 Nothing Nothing
 
                     wordsExpectation =
                         \words ->
@@ -411,7 +411,7 @@ guessWordSuit =
                         Teams (Just (Team [ Player "1" "p1" Online False, Player "2" "p2" Online False ] 4)) [ Team [ Player "2-1" "p21" Online False, Player "2-2" "p22" Online False ] 10 ]
 
                     testState =
-                        GameState (Words [] (Just (Word "d" "player2" "")) wordsList) testTeams 1 Game.Game.Ticking
+                        GameState (Words [] (Just (Word "d" "player2" "")) wordsList) testTeams 1 Game.Game.Ticking Game.Game.PlayingRound 2 Nothing Nothing
 
                     wordsExpectation =
                         \words ->

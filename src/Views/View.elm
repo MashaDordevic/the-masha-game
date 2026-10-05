@@ -2,6 +2,7 @@ module Views.View exposing (view)
 
 import Browser
 import Debugger.Debugger exposing (debugger)
+import Game.Game
 import Game.Status
 import Html exposing (div, text)
 import Html.Attributes exposing (..)
@@ -26,24 +27,30 @@ view model =
             currView =
                 case model.currentGame of
                     Playing gameModel ->
-                        case gameModel.game.status of
-                            Game.Status.Open ->
-                                lobbyView gameModel
+                        case gameModel.betweenRoundsAnimation of
+                            Just animation ->
+                                betweenRoundsView animation.targetRound
 
-                            Game.Status.Running ->
-                                if gameModel.isBetweenRounds then
-                                    betweenRoundsView gameModel.game
+                            Nothing ->
+                                case ( gameModel.game.state.phase, gameModel.game.state.targetRound ) of
+                                    ( Game.Game.BetweenRounds, Just targetRound ) ->
+                                        betweenRoundsView targetRound
 
-                                else
-                                    case gameModel.game.state.round of
-                                        0 ->
-                                            addingWordsView gameModel
+                                    _ ->
+                                        case gameModel.game.status of
+                                            Game.Status.Open ->
+                                                lobbyView gameModel
 
-                                        _ ->
-                                            playingView gameModel
+                                            Game.Status.Running ->
+                                                case gameModel.game.state.round of
+                                                    0 ->
+                                                        addingWordsView gameModel
 
-                            Game.Status.Finished ->
-                                finishedGameView gameModel.game
+                                                    _ ->
+                                                        playingView gameModel
+
+                                            Game.Status.Finished ->
+                                                finishedGameView gameModel.game
 
                     CreatingGame gameModel ->
                         nameInputView gameModel.nameInput "Creating…" gameModel.request AddGame

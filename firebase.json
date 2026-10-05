@@ -10,6 +10,8 @@
       { "source": "/kickPlayer", "function": "kickPlayer" },
       { "source": "/addWord", "function": "addWord" },
       { "source": "/deleteWord", "function": "deleteWord" },
+      { "source": "/enterBetweenRounds", "function": "enterBetweenRounds" },
+      { "source": "/advanceRound", "function": "advanceRound" },
       {
         "source": "**",
         "destination": "/index.html"

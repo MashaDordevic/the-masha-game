@@ -2,7 +2,7 @@
 
 ## Decision and status
 
-**Status: architecture decision remains open.**
+**Status: option 1 approved; round-transition slice implemented.**
 
 Use server-owned, transactional commands for gameplay transitions. Presence may
 affect eligibility, but no browser or owner should be required for progress.
@@ -25,16 +25,24 @@ model. They would leave timer, round, and ownership races intact.
 These fixes close important lost-update cases. They do not provide a general
 gameplay transition protocol.
 
+The first command slice now persists `phase`, `revision`, `targetRound`, and a
+server-derived deadline. Transactional `enterBetweenRounds` and `advanceRound`
+commands are authorized for players rather than owners. Expected revisions
+make stale and duplicate requests harmless, and legacy full-game writes cannot
+change command-owned round-transition state.
+
+All players can start the first interstitial after confirming that the group is
+ready. Any player may request due round advancement, so owner loss no longer
+blocks round transitions.
+
 ### Remaining evidence
 
-- `Main.elm` still sends complete proposed games for start, timer, guess, and
-  round transitions.
-- `updateGameMutation` checks owner identity and round bounds, but has no phase,
-  revision, command ID, turn ID, or expected-state check.
+- `Main.elm` still sends complete proposed games for lobby start, timer,
+  guesses, and turn transitions.
+- `updateGameMutation` protects round-transition fields but remaining gameplay
+  writes have no turn ID or expected-state check.
 - For transitions other than `0 -> 1`, the proposal replaces `state`. Two stale
   owner requests can still lose guesses, scores, timer changes, or rotation.
-- `StartPlaying` and later round delays are local `Delay.after` messages.
-  Refresh, suspension, or owner loss can discard the effective coordinator.
 - `TimerTick` is local. Only the local owner submits expiry.
 - `watchGameOwnership` is attached inside an HTTP invocation. The listener is
   not durable after the function instance is recycled.
@@ -85,26 +93,28 @@ phase, and turn rather than owner status.
 Represent teams with player IDs. Resolve current presence from canonical
 participant records.
 
+The round-transition slice is complete. Next, migrate turn start, pause,
+expiry, and rotation. Migrate guesses as explainer-only commands, then remove
+gameplay dependence on owner swapping. Team player-ID normalization remains a
+separate migration.
+
 ## Open questions
 
 - After what grace period is an offline designated explainer skipped?
 - Does confirmed explainer loss pause the deadline or let wall time continue?
 - What makes a team viable: one online player, or an explainer plus teammate?
 - Can any active player request due transitions? The recommendation assumes yes.
-- How are active legacy games handled when required phase/revision facts do not
-  exist?
+- Lobby-to-word-entry remains owner-only for now.
 
 The first three are product rules. The command model should not encode defaults
 until they are confirmed.
 
 ## Next steps and tests
 
-1. Define phases, command authorization, revisions, IDs, and deadline rules in
-   one persisted-game schema.
-2. Write a deterministic reducer with explicit `nowMs`; wrap it in a root
-   transaction.
-3. Migrate one transition slice and block legacy writes to its fields.
-4. Repeat until no gameplay transition depends on an owner-local model.
+1. Use the implemented round-transition reducers as the command template.
+2. Migrate turn start, pause, expiry, and rotation.
+3. Migrate guesses with current-explainer authorization.
+4. Remove gameplay owner dependence after the remaining command slices ship.
 
 Reducer tests should cover valid phase edges, stale revisions, duplicate
 commands, wrong actors, and invariant preservation.

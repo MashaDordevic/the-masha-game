@@ -3,7 +3,7 @@ module Views.AddingWords exposing (..)
 import Dict exposing (Dict)
 import Game.Game exposing (Game)
 import Game.Words
-import Html exposing (Html, button, div, form, h1, h3, input, label, p, span, text)
+import Html exposing (Html, button, div, form, h1, h2, h3, input, label, p, span, text)
 import Html.Attributes exposing (attribute, class, disabled, for, id, placeholder, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Player exposing (Player)
@@ -155,6 +155,49 @@ addingWordsView model =
 
         hasNoWords =
             List.isEmpty model.game.state.words.next
+
+        startButton =
+            case model.localUser of
+                LocalPlayer _ ->
+                    button [ onClick OpenStartConfirmation, disabled hasNoWords ] [ text "Let's play" ]
+
+                LocalWatcher _ ->
+                    text ""
+
+        confirmationDialog =
+            if model.isStartConfirmationOpen then
+                div [ class "start-confirmation-backdrop" ]
+                    [ div
+                        [ class "start-confirmation-dialog"
+                        , attribute "role" "dialog"
+                        , attribute "aria-modal" "true"
+                        , attribute "aria-labelledby" "start-confirmation-title"
+                        ]
+                        [ h2 [ id "start-confirmation-title" ] [ text "Ready to start?" ]
+                        , p [] [ text "Starting now will begin the game for everyone. Make sure everyone has finished adding their words." ]
+                        , case model.startRequestError of
+                            Just requestError ->
+                                p [ class "error", attribute "role" "alert" ] [ text requestError ]
+
+                            Nothing ->
+                                text ""
+                        , div [ class "start-confirmation-actions" ]
+                            [ button [ onClick ConfirmStartPlaying, disabled model.isStartRequestPending ]
+                                [ text
+                                    (if model.isStartRequestPending then
+                                        "Starting…"
+
+                                     else
+                                        "Start for everyone"
+                                    )
+                                ]
+                            , button [ class "secondary", onClick CancelStartConfirmation, disabled model.isStartRequestPending ] [ text "Keep adding words" ]
+                            ]
+                        ]
+                    ]
+
+            else
+                text ""
     in
     div [ class "adding-words-container" ]
         [ h1 []
@@ -162,10 +205,7 @@ addingWordsView model =
         , div []
             [ wordsInput
             , wordsStatisticsView model.game.state.words model.game.participants.players model.isOwner model.localUser
-            , if model.isOwner then
-                button [ onClick StartPlaying, disabled hasNoWords ] [ text "Let's play" ]
-
-              else
-                text ""
+            , startButton
             ]
+        , confirmationDialog
         ]

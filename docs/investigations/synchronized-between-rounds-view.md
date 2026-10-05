@@ -2,7 +2,7 @@
 
 ## Decision and status
 
-**Status: root cause confirmed; transition contract still needs approval.**
+**Status: implemented.**
 
 Persist the between-rounds phase and its server-derived deadline. All clients
 must render the same committed phase; no local flag may define game progress.
@@ -20,27 +20,28 @@ must render the same committed phase; no local flag may define game progress.
 This resolves the original join/team-creation race. It does not synchronize
 the interstitial itself.
 
-### Remaining root cause
+### Original root cause (resolved)
 
-- `StartPlaying` changes only the owner's local `isBetweenRounds` flag and
-  schedules `NextRound` after 6.5 seconds.
-- No shared write occurs when the first interstitial starts. Other clients stay
-  on word entry, then jump to round one after the owner's delayed write.
-- At later round ends, every client derives the local flag and schedules a
-  delay. Only the owner may commit advancement.
-- Refresh initializes `isBetweenRounds` to false. No client can recover the
-  transition start time or remaining duration.
-- `updateGameMutation` bounds round changes, but has no phase or revision. It
-  cannot identify duplicate or stale transition requests.
-- New joiners are classified from round alone. During a persisted round `0`
-  interstitial, they would still join as players unless policy changes.
+- `StartPlaying` changed only the owner's local `isBetweenRounds` flag and
+  scheduled `NextRound` after 6.5 seconds.
+- No shared write occurred when the first interstitial started. Other clients
+  stayed on word entry, then jumped to round one after the owner's delayed
+  write.
+- At later round ends, every client derived the local flag and scheduled a
+  delay. Only the owner could commit advancement.
+- Refresh initialized `isBetweenRounds` to false, so clients could not recover
+  a transition.
+- `updateGameMutation` had no phase or revision and could not identify
+  duplicate or stale transition requests.
+- New joiners were classified from round alone.
 
 ### Required invariants
 
 - Entering an interstitial is one committed transition with a unique revision.
 - Every client observes the same phase, target round, and deadline.
 - Advancement occurs at most once and cannot happen before the deadline.
-- Refresh and reconnect derive remaining time from persisted facts.
+- Refresh and reconnect hydrate the persisted phase; a restarted local
+  animation does not delay shared progression.
 - Owner loss cannot prevent a due transition.
 - Join eligibility is defined for the interstitial, not inferred from round.
 
@@ -51,7 +52,7 @@ the interstitial itself.
 Persist `phase = betweenRounds`, target round, revision, and a trusted
 deadline. Enter and advance through transactional commands.
 
-Any active participant may request advancement after the deadline. The server
+Any active player may request advancement after the deadline. The server
 validates phase, revision, target, and time, then commits once.
 
 This aligns rendering, recovery, and join policy with shared state.
@@ -71,42 +72,48 @@ Choose option 1. Use the same phase/revision command model recommended in
 
 Contract defaults:
 
-- one shared deadline controls transition completion;
-- reconnecting clients show only the remaining interval;
+- one server-derived 7.5-second deadline controls shared transition completion;
+- a client that observes the interstitial late finishes its full local
+  animation before revealing the latest committed gameplay state;
 - an overdue transition stays durable until an active player requests it;
-- a valid request is idempotent and not owner-only;
+- a valid request commits at most once; stale retries are harmless;
 - joining during `betweenRounds(targetRound = 1)` creates a watcher.
 
-The last rule is recommended because team membership has already been fixed by
-the command that entered the phase.
+Team membership is fixed by the command that enters the first interstitial.
+Returning players retain their existing role. All players see “Let’s play” and
+must confirm “Start for everyone”; watchers cannot issue transition commands.
 
-## Open questions
+The implementation uses `phase`, `revision`, `targetRound`, and `deadlineMs`.
+`enterBetweenRounds` creates first-round teams when needed.
+`advanceRound` validates actor, phase, expected revision, target, and server
+time in the same root transaction. Legacy full-game updates are rejected while
+the interstitial is active and cannot overwrite transition-owned fields.
 
-- Must clients finish the animation, or may delayed clients enter gameplay at
-  the shared deadline?
-- Is watcher status during the first interstitial the intended product rule?
-- Should gameplay advance automatically through a scheduler, or on the first
-  valid client request after the deadline?
-- How should a legacy round-zero game without phase facts be classified?
+## Decisions
 
-Prefer request-after-deadline over a scheduler unless exact unattended
-advancement has product value.
+- Clients finish animations they have started; the animation is presentation
+  only and never delays shared state.
+- New arrivals during the first interstitial are watchers.
+- The first valid player request after the deadline advances the round; no
+  scheduler is used.
+- Legacy games without phase/revision facts are unsupported. Existing
+  development games can be deleted because the product is not released.
+- Lobby-to-word-entry remains owner-only in this slice.
 
-## Next steps and tests
+## Implementation and tests
 
-1. Add the phase, target round, revision, and deadline to the shared schema.
-2. Implement transactional `enterBetweenRounds` and `advanceRound` reducers.
-3. Render solely from persisted phase and estimated server time.
-4. Remove `isBetweenRounds` as transition authority and cancel local
-   `Delay.after` progression.
-5. Change join authorization to use phase.
+The shared schema and transactional reducers are implemented. Persisted phase
+drives gameplay progress; a local animation record controls only presentation.
+Join authorization uses phase, and clients retry due transitions safely.
 
-Reducer tests should reject early, stale, duplicate, wrong-target, and
-unauthorized commands while preserving teams, words, and scores.
+Reducer tests cover early, stale, duplicate, and unauthorized commands, later
+round word restart, final-round completion, all-offline overdue recovery, role
+assignment, and protection from legacy full-game writes.
 
-Emulator tests should race enter/advance requests, disconnect the owner, pass a
-deadline with everyone offline, and reject a stale reconnecting client.
+The multiplayer browser test closes the owner, starts through the confirmation
+as a non-owner, refreshes a player mid-transition, verifies that a new arrival
+becomes a watcher, confirms synchronized interstitial rendering, and waits for
+all clients to reach round one.
 
-Browser tests should cover the first and later interstitials, refresh midway,
-owner closure, and a join during the first interstitial. Poll phase/revision;
-use short configured deadlines rather than correctness sleeps.
+The deterministic transaction tests cover competing requests through expected
+revision checks; the browser suite covers the corresponding shared rendering.
