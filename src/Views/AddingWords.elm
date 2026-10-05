@@ -9,10 +9,11 @@ import Html.Events exposing (onClick, onInput, onSubmit)
 import Player exposing (Player)
 import Request
 import State exposing (LocalUser(..), Msg(..), PlayingGameModel)
+import Views.PlayerKick exposing (kickPlayerButton)
 
 
-wordsStatisticsView : Game.Words.Words -> Dict String Player -> Html Msg
-wordsStatisticsView words players =
+wordsStatisticsView : Game.Words.Words -> Dict String Player -> Bool -> LocalUser -> Html Msg
+wordsStatisticsView words players isOwner localUser =
     let
         wordCountByPlayer =
             Game.Words.wordsByPlayer words.next
@@ -22,6 +23,12 @@ wordsStatisticsView words players =
             players
                 |> Dict.values
                 |> List.map (\player -> ( player.name, 0 ))
+                |> Dict.fromList
+
+        playerByName =
+            players
+                |> Dict.values
+                |> List.map (\player -> ( player.name, player ))
                 |> Dict.fromList
 
         statsData =
@@ -34,7 +41,13 @@ wordsStatisticsView words players =
                     (\( playerName, wordsCount ) ->
                         div [ class "request", class "space-between" ]
                             [ span [] [ text playerName ]
-                            , span [] [ text (String.fromInt wordsCount) ]
+                            , div [ class "player-list-details" ]
+                                [ span [] [ text (String.fromInt wordsCount) ]
+                                , playerByName
+                                    |> Dict.get playerName
+                                    |> Maybe.map (kickPlayerButton isOwner localUser)
+                                    |> Maybe.withDefault (text "")
+                                ]
                             ]
                     )
                 |> div []
@@ -97,7 +110,7 @@ wordsInputView game localUser inputValue request =
     in
     div [ class "words-input-container" ]
         [ form [ class "word-entry-form", onSubmit AddWord ]
-            [ label [ for "word" ] [ text "Word to add" ]
+            [ label [ for "word" ] [ text "Add words, one at a time. Then play when the group has enough." ]
             , input
                 [ type_ "text"
                 , id "word"
@@ -105,7 +118,7 @@ wordsInputView game localUser inputValue request =
                 , attribute "autocomplete" "on"
                 , attribute "autocapitalize" "characters"
                 , attribute "spellcheck" "true"
-                , placeholder "e.g. table, mango, nudist"
+                , placeholder "e.g. mango"
                 , value inputValue
                 , onInput UpdateWordInput
                 , disabled isLoading
@@ -148,7 +161,7 @@ addingWordsView model =
             [ text "Let’s add some words" ]
         , div []
             [ wordsInput
-            , wordsStatisticsView model.game.state.words model.game.participants.players
+            , wordsStatisticsView model.game.state.words model.game.participants.players model.isOwner model.localUser
             , if model.isOwner then
                 button [ onClick StartPlaying, disabled hasNoWords ] [ text "Let's play" ]
 

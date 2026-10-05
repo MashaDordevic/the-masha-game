@@ -263,7 +263,7 @@ playingGameUpdate msg model =
                                             Game.Gameplay.isPlayerOnwer decodedGame localPlayer
                                     in
                                     if game.id == decodedGame.id then
-                                        ( { model | currentGame = Playing { gameModel | game = decodedGame, isOwner = isLocalPlayerOwner, turnTimer = newTimer, isBetweenRounds = isRoundEnd } }
+                                        ( { model | currentGame = Playing { gameModel | game = decodedGame, isOwner = isLocalPlayerOwner, turnTimer = newTimer, isBetweenRounds = isRoundEnd, isDebugFixture = False } }
                                         , if isRoundEnd then
                                             Delay.after 6500 NextRound
 
@@ -284,7 +284,11 @@ playingGameUpdate msg model =
                                         ( model, copyInviteLink (Json.Encode.string game.gameId) )
 
                                     KickPlayer userId ->
-                                        ( model, Api.kickPlayer model.apiUrl model.authToken userId game.id )
+                                        if gameModel.isDebugFixture then
+                                            Debugger.Update.update msg model
+
+                                        else
+                                            ( model, Api.kickPlayer model.apiUrl model.authToken userId game.id )
 
                                     StartGame ->
                                         let
@@ -572,7 +576,7 @@ update msg model =
                             else
                                 case result of
                                     Ok ( game, player ) ->
-                                        ( { model | currentGame = Playing { game = game, isOwner = True, localUser = LocalPlayer player, wordInput = "", addWordRequest = Request.idle, turnTimer = defaultTimer, isBetweenRounds = False } }
+                                        ( { model | currentGame = Playing { game = game, isOwner = True, localUser = LocalPlayer player, wordInput = "", addWordRequest = Request.idle, turnTimer = defaultTimer, isBetweenRounds = False, isDebugFixture = False } }
                                         , Cmd.batch
                                             [ subscribeToGame
                                                 (Json.Encode.object
@@ -641,7 +645,7 @@ update msg model =
                                                             LocalWatcher watcher ->
                                                                 watcher.name
                                                 in
-                                                ( { model | currentGame = Playing { localUser = localUser, isOwner = isLocalPlayerOwner, game = joinedGameInfo.game, wordInput = "", addWordRequest = Request.idle, turnTimer = defaultTimer, isBetweenRounds = False } }
+                                                ( { model | currentGame = Playing { localUser = localUser, isOwner = isLocalPlayerOwner, game = joinedGameInfo.game, wordInput = "", addWordRequest = Request.idle, turnTimer = defaultTimer, isBetweenRounds = False, isDebugFixture = False } }
                                                 , Cmd.batch
                                                     [ subscribeToGame
                                                         (Json.Encode.object

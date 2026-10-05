@@ -13,6 +13,12 @@
   align-items: center;
   width: 100%;
 
+  label {
+    max-width: 22rem;
+    font-size: 18px;
+    line-height: 1.2;
+  }
+
   input {
     margin-top: 10px;
     width: 100%;
@@ -101,6 +107,12 @@
 .words-stats-container {
   margin-top: 50px;
   margin-bottom: 32px;
+}
+
+.player-list-details {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .space-between {

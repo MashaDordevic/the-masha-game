@@ -1,22 +1,12 @@
 module Views.Lobby exposing (..)
 
 import Dict exposing (Dict)
-import Game.Participants exposing (Participants)
 import Html exposing (Html, button, div, h1, h3, span, text)
 import Html.Attributes exposing (class, classList, disabled)
 import Html.Events exposing (onClick)
 import Player exposing (Player)
-import State exposing (LocalUser(..), Msg(..), PlayingGameModel)
-
-
-isPlayerLocalUser : Player -> LocalUser -> Bool
-isPlayerLocalUser player localUser =
-    case localUser of
-        LocalPlayer localPlayer ->
-            localPlayer.id == player.id
-
-        LocalWatcher _ ->
-            False
+import State exposing (LocalUser, Msg(..), PlayingGameModel)
+import Views.PlayerKick exposing (canKickPlayer, kickPlayerButton)
 
 
 playersList : Dict String Player -> Bool -> LocalUser -> Html Msg
@@ -27,7 +17,7 @@ playersList users isOwner localUser =
             (\( _, user ) ->
                 let
                     canBeKicked =
-                        isOwner && not (isPlayerLocalUser user localUser)
+                        canKickPlayer isOwner localUser user
                 in
                 div
                     [ classList
@@ -36,11 +26,7 @@ playersList users isOwner localUser =
                         ]
                     ]
                     [ span [] [ text user.name ]
-                    , if canBeKicked then
-                        button [ class "icon-button", onClick (KickPlayer user.id) ] [ text "🚫" ]
-
-                      else
-                        text ""
+                    , kickPlayerButton isOwner localUser user
                     ]
             )
         |> div [ class "participants" ]

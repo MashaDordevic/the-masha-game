@@ -27,7 +27,19 @@ upadateGame gameModel game =
                 |> withDefault localUser
                 |> LocalPlayer
     in
-    Playing { gameModel | game = game, localUser = newLocalUser }
+    Playing { gameModel | game = game, localUser = newLocalUser, isDebugFixture = True }
+
+
+removePlayer : String -> Game -> Game
+removePlayer playerId game =
+    let
+        participants =
+            game.participants
+    in
+    { game
+        | participants =
+            { participants | players = Dict.remove playerId participants.players }
+    }
 
 
 getOwner : PlayingGameModel -> Maybe Player
@@ -122,6 +134,9 @@ update msg model =
                         newGame = { oldGame | state = newState }
                     in
                     ( { model | currentGame = upadateGame gameModel newGame }, Cmd.none )
+
+                KickPlayer playerId ->
+                    ( { model | currentGame = upadateGame gameModel (removePlayer playerId gameModel.game) }, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )

@@ -59,10 +59,10 @@ test('keeps the mobile word form stable through reordering and ownership transfe
     latePlayerPage.getByRole('heading', { name: 'Let’s add some words' })
   ).toBeVisible()
   await expect(
-    latePlayerPage.getByRole('textbox', { name: 'Word to add' })
+    latePlayerPage.getByRole('textbox', { name: 'Add words, one at a time. Then play when the group has enough.' })
   ).toBeVisible()
   await latePlayerPage
-    .getByRole('textbox', { name: 'Word to add' })
+    .getByRole('textbox', { name: 'Add words, one at a time. Then play when the group has enough.' })
     .fill('late arrival')
   const latePlayerWordRequest = latePlayerPage.waitForResponse((response) =>
     response.url().includes('/addWord')
@@ -70,7 +70,7 @@ test('keeps the mobile word form stable through reordering and ownership transfe
   await latePlayerPage.getByRole('button', { name: 'Add' }).click()
   await latePlayerWordRequest
 
-  const wordInput = ownerPage.getByRole('textbox', { name: 'Word to add' })
+  const wordInput = ownerPage.getByRole('textbox', { name: 'Add words, one at a time. Then play when the group has enough.' })
   const wordForm = ownerPage.locator('.word-entry-form')
   let addWordRequestCount = 0
   ownerPage.on('request', (request) => {

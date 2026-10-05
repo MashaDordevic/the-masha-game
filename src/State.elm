@@ -33,6 +33,7 @@ type alias PlayingGameModel =
     , addWordRequest : Request.State ( RequestId, String ) String
     , turnTimer : Int
     , isBetweenRounds : Bool
+    , isDebugFixture : Bool
     }
 
 
