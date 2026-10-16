@@ -11,7 +11,7 @@ import State exposing (LocalUser(..), Msg(..))
 import Test exposing (Test, describe, test)
 import Test.Html.Event as Event
 import Test.Html.Query as Query
-import Test.Html.Selector exposing (attribute, class, tag, text)
+import Test.Html.Selector exposing (attribute, class, containing, tag, text)
 import Views.AddingWords exposing (wordsInputView, wordsStatisticsView)
 
 
@@ -156,6 +156,22 @@ suite =
                 in
                 Expect.all
                     [ \_ -> rows |> Query.index 0 |> Query.has [ text "ALICE", text "1" ]
+                    , \_ ->
+                        rows
+                            |> Query.index 0
+                            |> Query.children []
+                            |> Query.index 0
+                            |> Query.has
+                                [ class "player-stat-name"
+                                , containing [ text "ALICE" ]
+                                , containing [ tag "button" ]
+                                ]
+                    , \_ ->
+                        rows
+                            |> Query.index 0
+                            |> Query.children []
+                            |> Query.index 1
+                            |> Query.has [ text "1" ]
                     , \_ -> rows |> Query.index 1 |> Query.has [ text "MASHA", text "2" ]
                     , \_ -> rows |> Query.index 2 |> Query.has [ text "ZOE", text "0" ]
                     ]

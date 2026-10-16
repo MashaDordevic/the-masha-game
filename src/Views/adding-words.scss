@@ -34,6 +34,10 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+
+  .error {
+    margin-top: 16px;
+  }
 }
 
 .word-entry-form {
@@ -138,10 +142,15 @@
   margin-bottom: 32px;
 }
 
-.player-list-details {
+.words-stats-container .space-between {
+  align-items: center;
+}
+
+.player-stat-name {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .space-between {

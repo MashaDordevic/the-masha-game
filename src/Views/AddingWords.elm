@@ -40,14 +40,14 @@ wordsStatisticsView words players isOwner localUser =
                 |> List.map
                     (\( playerName, wordsCount ) ->
                         div [ class "request", class "space-between" ]
-                            [ span [] [ text playerName ]
-                            , div [ class "player-list-details" ]
-                                [ span [] [ text (String.fromInt wordsCount) ]
+                            [ div [ class "player-stat-name" ]
+                                [ span [] [ text playerName ]
                                 , playerByName
                                     |> Dict.get playerName
                                     |> Maybe.map (kickPlayerButton isOwner localUser)
                                     |> Maybe.withDefault (text "")
                                 ]
+                            , span [] [ text (String.fromInt wordsCount) ]
                             ]
                     )
                 |> div []
