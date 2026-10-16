@@ -18,6 +18,7 @@ type Player = {
 
 type Game = {
   id: string;
+  defaultTimer: number;
   participants: {
     players: { [key: string]: Player };
   };

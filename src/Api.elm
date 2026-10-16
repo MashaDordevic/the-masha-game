@@ -42,6 +42,50 @@ startBetweenRounds apiUrl authToken gameId expectedRevision =
     roundTransitionRequest apiUrl authToken gameId "enterBetweenRounds" expectedRevision StartBetweenRoundsCompleted
 
 
+startGame : String -> String -> String -> Int -> Cmd Msg
+startGame apiUrl authToken gameId expectedRevision =
+    roundTransitionRequest apiUrl authToken gameId "startGame" expectedRevision NoOpResult
+
+
+turnCommandRequest : String -> String -> String -> String -> Int -> Int -> Cmd Msg
+turnCommandRequest apiUrl authToken gameId endpoint expectedRevision expectedTurnId =
+    Http.request
+        { method = "POST"
+        , headers = [ Http.header "Authorization" ("Bearer " ++ authToken) ]
+        , url = apiUrl ++ "/" ++ endpoint
+        , body =
+            Http.jsonBody <|
+                Json.Encode.object
+                    [ ( "gameId", Json.Encode.string gameId )
+                    , ( "expectedRevision", Json.Encode.int expectedRevision )
+                    , ( "expectedTurnId", Json.Encode.int expectedTurnId )
+                    ]
+        , expect = Http.expectString NoOpResult
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+startTurn : String -> String -> String -> Int -> Int -> Cmd Msg
+startTurn apiUrl authToken gameId expectedRevision expectedTurnId =
+    turnCommandRequest apiUrl authToken gameId "startTurn" expectedRevision expectedTurnId
+
+
+pauseTurn : String -> String -> String -> Int -> Int -> Cmd Msg
+pauseTurn apiUrl authToken gameId expectedRevision expectedTurnId =
+    turnCommandRequest apiUrl authToken gameId "pauseTurn" expectedRevision expectedTurnId
+
+
+guessWord : String -> String -> String -> Int -> Int -> Cmd Msg
+guessWord apiUrl authToken gameId expectedRevision expectedTurnId =
+    turnCommandRequest apiUrl authToken gameId "guessWord" expectedRevision expectedTurnId
+
+
+expireTurn : String -> String -> String -> Int -> Int -> Cmd Msg
+expireTurn apiUrl authToken gameId expectedRevision expectedTurnId =
+    turnCommandRequest apiUrl authToken gameId "expireTurn" expectedRevision expectedTurnId
+
+
 deleteWord : String -> String -> String -> String -> Cmd Msg
 deleteWord apiUrl authToken gameId wordId =
     Http.request

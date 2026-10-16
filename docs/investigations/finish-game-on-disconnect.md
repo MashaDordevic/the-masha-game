@@ -111,8 +111,8 @@ trusted time, expected revisions, and turn IDs.
 - Is explicit end-early needed, and who may approve it?
 - How is stable identity recovered if anonymous authentication state is lost?
 
-The timer answer must match `mobile-timer-robustness.md`. The team rule must
-match `offline-game-transitions.md`.
+The timer answer must match `mobile-timer-robustness.md`. The team viability
+rule remains open here.
 
 ## Next steps and tests
 

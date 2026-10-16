@@ -2,14 +2,14 @@
 
 ## Decision and status
 
-**Status: root cause confirmed; expiry semantics need product approval.**
+**Status: server-owned deadline and transactional timer commands implemented.**
 
 Use a server-derived turn deadline and transactional timer commands. Device
 intervals are presentation refreshes only and must not measure elapsed time.
 
 ## Evidence and constraints
 
-### Current evidence
+### Original evidence
 
 - Starting a turn persists only `{ "status": "ticking" }`. It discards the
   remaining duration and records no start time, deadline, turn ID, or revision.
@@ -26,8 +26,9 @@ intervals are presentation refreshes only and must not measure elapsed time.
 - `nosleep.js` may reduce screen sleep. It cannot prevent manual lock, process
   suspension, timer throttling, or eviction.
 
-No later change resolves the timer defect. Narrow word mutations reduce some
-state races, but guesses during play still use the full-game update path.
+The transactional gameplay migration resolves these defects. Running timers
+persist a server-derived deadline; paused and reset timers persist remaining
+milliseconds; every command validates the turn ID and revision.
 
 ### Required invariants
 
@@ -86,12 +87,12 @@ every timer-affecting command.
 Use milliseconds in storage. Round only for display, preferably with
 `ceil(remainingMs / 1000)`.
 
-## Open questions
+## Product decisions
 
-- Does locked/background time count? The recommendation assumes yes.
-- Does confirmed explainer connection loss pause the turn or consume time?
-- When overdue, should a client request expiry or should a scheduler commit it?
-- What is the compatibility rule for a legacy running timer with no start time?
+- Locked/background time counts.
+- Confirmed explainer connection loss does not pause the turn.
+- Any active player may request overdue expiry.
+- Legacy running timers without deadlines are incompatible.
 
 A legacy running timer cannot be reconstructed accurately. Prefer rejecting it
 with a clear recreate-game path; paused/reset seconds can convert to

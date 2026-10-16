@@ -18,9 +18,14 @@ import {
     DatabaseRoot,
     deleteWordMutation,
     enterBetweenRoundsMutation,
+    expireTurnMutation,
+    guessWordMutation,
     joinGameMutation,
     MutationResult,
-    updateGameMutation,
+    normalizeStoredGame,
+    pauseTurnMutation,
+    startGameMutation,
+    startTurnMutation,
 } from './gameMutations'
 import cors from 'cors'
 // import { database } from "firebase-admin";
@@ -209,12 +214,19 @@ export const findGame = onCorsRequest(async (request, response) => {
         response.status(400).send('gameId parameter expected')
     }
 
-    const writeResult = await findGameByGameId(gameId as string)
-    if (writeResult) {
-        response.send(writeResult)
-    } else {
-        response.status(500).send(`Cannot find game.`)
+    const foundGame = await findGameByGameId(gameId as string)
+    if (!foundGame) {
+        response.status(404).send('Game not found.')
+        return
     }
+    const normalizedGame = normalizeStoredGame(foundGame)
+    if (!normalizedGame) {
+        response
+            .status(409)
+            .send('Game state is incompatible. Recreate this legacy game.')
+        return
+    }
+    response.send({ ...normalizedGame, id: foundGame.id })
 })
 
 export const kickPlayer = onAuthenticatedCorsRequest(async (request, response, uid) => {
@@ -253,23 +265,6 @@ export const kickPlayer = onAuthenticatedCorsRequest(async (request, response, u
 
     await games.kickPlayer(gameId, userId)
     response.send(`Player kicked.`)
-})
-
-export const updateGame = onAuthenticatedCorsRequest(async (request, response, uid) => {
-    const { game } = request.body
-    if (!game) {
-        response.status(400).send('game parameter expected')
-        return
-    }
-
-    const result = await runRootMutation((root) =>
-        updateGameMutation(root, game, uid),
-    )
-    if (!result.committed) {
-        sendMutationFailure(response, result)
-        return
-    }
-    response.send({ ...result.value.game, id: game.id })
 })
 
 const runRoundTransition = async (
@@ -311,6 +306,90 @@ export const enterBetweenRounds = onAuthenticatedCorsRequest(
 export const advanceRound = onAuthenticatedCorsRequest(
     async (request, response, uid) =>
         runRoundTransition(request, response, uid, advanceRoundMutation),
+)
+
+export const startGame = onAuthenticatedCorsRequest(
+    async (request, response, uid) => {
+        const { gameId, expectedRevision } = request.body
+        if (
+            typeof gameId !== 'string' ||
+            typeof expectedRevision !== 'number' ||
+            !Number.isInteger(expectedRevision) ||
+            expectedRevision < 0
+        ) {
+            response
+                .status(400)
+                .send('gameId and a valid expectedRevision are required')
+            return
+        }
+        const result = await runRootMutation((root) =>
+            startGameMutation(root, { gameId, uid, expectedRevision }),
+        )
+        if (!result.committed) {
+            sendMutationFailure(response, result)
+            return
+        }
+        response.send({ ...result.value.game, id: gameId })
+    },
+)
+
+const runTurnCommand = async (
+    request: functions.https.Request,
+    response: Response<any>,
+    uid: string,
+    mutate: typeof startTurnMutation,
+) => {
+    const { gameId, expectedRevision, expectedTurnId } = request.body
+    if (
+        typeof gameId !== 'string' ||
+        typeof expectedRevision !== 'number' ||
+        !Number.isInteger(expectedRevision) ||
+        expectedRevision < 0 ||
+        typeof expectedTurnId !== 'number' ||
+        !Number.isInteger(expectedTurnId) ||
+        expectedTurnId < 0
+    ) {
+        response
+            .status(400)
+            .send(
+                'gameId, expectedRevision, and expectedTurnId are required',
+            )
+        return
+    }
+    const result = await runRootMutation((root) =>
+        mutate(root, {
+            gameId,
+            uid,
+            expectedRevision,
+            expectedTurnId,
+            nowMs: Date.now(),
+        }),
+    )
+    if (!result.committed) {
+        sendMutationFailure(response, result)
+        return
+    }
+    response.send({ ...result.value.game, id: gameId })
+}
+
+export const startTurn = onAuthenticatedCorsRequest(
+    async (request, response, uid) =>
+        runTurnCommand(request, response, uid, startTurnMutation),
+)
+
+export const pauseTurn = onAuthenticatedCorsRequest(
+    async (request, response, uid) =>
+        runTurnCommand(request, response, uid, pauseTurnMutation),
+)
+
+export const guessWord = onAuthenticatedCorsRequest(
+    async (request, response, uid) =>
+        runTurnCommand(request, response, uid, guessWordMutation),
+)
+
+export const expireTurn = onAuthenticatedCorsRequest(
+    async (request, response, uid) =>
+        runTurnCommand(request, response, uid, expireTurnMutation),
 )
 
 export const addWord = onAuthenticatedCorsRequest(async (request, response, uid) => {

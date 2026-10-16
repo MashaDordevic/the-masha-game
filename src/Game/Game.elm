@@ -29,7 +29,7 @@ type alias Game =
 
 
 type TurnTimer
-    = Ticking
+    = Ticking Float
     | NotTicking Int
     | Restarted Int
 
@@ -51,20 +51,43 @@ type alias GameState =
     , revision : Int
     , targetRound : Maybe Int
     , deadlineMs : Maybe Float
+    , turnId : Int
     }
 
 
 gameStateDecoder : Decoder GameState
 gameStateDecoder =
-    Json.Decode.map8 GameState
-        (optionalNullableField "words" wordsDecoder (Words [] Maybe.Nothing []))
-        (optionalNullableField "teams" teamsDecoder emptyTeams)
-        (field "round" int)
-        (field "turnTimer" turnTimerDecoder)
-        (field "phase" gamePhaseDecoder)
-        (field "revision" int)
-        (optionalNullableField "targetRound" (Json.Decode.map Just int) Nothing)
-        (optionalNullableField "deadlineMs" (Json.Decode.map Just float) Nothing)
+    field "round" int
+        |> Json.Decode.andThen
+            (\round ->
+                Json.Decode.map8
+                    (\words teams turnTimer phase revision targetRound deadlineMs turnId ->
+                        GameState words teams round turnTimer phase revision targetRound deadlineMs turnId
+                    )
+                    (optionalNullableField "words" wordsDecoder (Words [] Maybe.Nothing []))
+                    (optionalNullableField "teams" teamsDecoder emptyTeams)
+                    (field "turnTimer" turnTimerDecoder)
+                    (optionalNullableField "phase" gamePhaseDecoder (phaseForRound round))
+                    (optionalNullableField "revision" int 0)
+                    (optionalNullableField "targetRound" (Json.Decode.map Just int) Nothing)
+                    (optionalNullableField "deadlineMs" (Json.Decode.map Just float) Nothing)
+                    (optionalNullableField "turnId" int 0)
+            )
+
+
+phaseForRound : Int -> GamePhase
+phaseForRound round =
+    if round < 0 then
+        Lobby
+
+    else if round == 0 then
+        AddingWords
+
+    else if round >= 4 then
+        GameFinished
+
+    else
+        PlayingRound
 
 
 gameStateEncoder : GameState -> Json.Encode.Value
@@ -78,12 +101,13 @@ gameStateEncoder gameState =
         , ( "revision", Json.Encode.int gameState.revision )
         , ( "targetRound", Maybe.map Json.Encode.int gameState.targetRound |> Maybe.withDefault Json.Encode.null )
         , ( "deadlineMs", Maybe.map Json.Encode.float gameState.deadlineMs |> Maybe.withDefault Json.Encode.null )
+        , ( "turnId", Json.Encode.int gameState.turnId )
         ]
 
 
 emptyGameState : GameState
 emptyGameState =
-    GameState (Words [] Maybe.Nothing []) emptyTeams -1 (Restarted defaultTimer) Lobby 0 Nothing Nothing
+    GameState (Words [] Maybe.Nothing []) emptyTeams -1 (Restarted (defaultTimer * 1000)) Lobby 0 Nothing Nothing 0
 
 
 createGameModel : Player -> Game
@@ -117,14 +141,23 @@ turnTimerDecoder =
 turnTimerTypeDecoder : String -> Decoder TurnTimer
 turnTimerTypeDecoder timerType =
     case timerType of
-        "ticking" ->
-            Json.Decode.succeed Ticking
+        "running" ->
+            field "deadlineMs" float |> Json.Decode.map Ticking
 
         "paused" ->
-            field "value" Json.Decode.int |> Json.Decode.map NotTicking
+            Json.Decode.oneOf
+                [ field "remainingMs" int |> Json.Decode.map NotTicking
+                , field "value" int |> Json.Decode.map ((*) 1000 >> NotTicking)
+                ]
+
+        "reset" ->
+            field "remainingMs" int |> Json.Decode.map Restarted
 
         "restarted" ->
-            field "value" Json.Decode.int |> Json.Decode.map Restarted
+            field "value" int |> Json.Decode.map ((*) 1000 >> Restarted)
+
+        "ticking" ->
+            Json.Decode.fail "legacy running timer has no recoverable deadline"
 
         _ ->
             Json.Decode.fail "turn timer status unknown"
@@ -184,14 +217,14 @@ gamePhaseEncoder phase =
 turnTimerEncoder : TurnTimer -> Json.Encode.Value
 turnTimerEncoder turnTimer =
     case turnTimer of
-        Ticking ->
-            Json.Encode.object [ ( "status", Json.Encode.string "ticking" ) ]
+        Ticking deadlineMs ->
+            Json.Encode.object [ ( "status", Json.Encode.string "running" ), ( "deadlineMs", Json.Encode.float deadlineMs ) ]
 
-        NotTicking timerValue ->
-            Json.Encode.object [ ( "status", Json.Encode.string "paused" ), ( "value", Json.Encode.int timerValue ) ]
+        NotTicking remainingMs ->
+            Json.Encode.object [ ( "status", Json.Encode.string "paused" ), ( "remainingMs", Json.Encode.int remainingMs ) ]
 
-        Restarted timerValue ->
-            Json.Encode.object [ ( "status", Json.Encode.string "restarted" ), ( "value", Json.Encode.int timerValue ) ]
+        Restarted remainingMs ->
+            Json.Encode.object [ ( "status", Json.Encode.string "reset" ), ( "remainingMs", Json.Encode.int remainingMs ) ]
 
 
 gameEncoder : Game -> Json.Encode.Value

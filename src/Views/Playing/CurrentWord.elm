@@ -31,6 +31,17 @@ currentWord word turnTimer =
         ]
 
 
+readOnlyCurrentWord : Word -> Int -> Html Msg
+readOnlyCurrentWord word turnTimer =
+    div [ class "section" ]
+        [ div [ classList [ ( "current-word-border", True ), ( "countdown10", turnTimer <= countdownMoment ) ] ]
+            [ div [ class "current-word-container", class "has-word" ]
+                [ h1 [ class "current-word" ] [ text word.word ]
+                ]
+            ]
+        ]
+
+
 currentWordView : Game -> LocalUser -> Int -> Html Msg
 currentWordView game localUser turnTimer =
     case localUser of
@@ -49,7 +60,7 @@ currentWordView game localUser turnTimer =
         LocalWatcher _ ->
             case game.state.words.current of
                 Just word ->
-                    currentWord word turnTimer
+                    readOnlyCurrentWord word turnTimer
 
                 Nothing ->
                     text ""

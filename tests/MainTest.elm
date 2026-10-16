@@ -4,12 +4,13 @@ import Debugger.Update
 import Dict
 import Expect
 import Fixtures.Game
-import Game.Game exposing (GamePhase(..), createGameModel)
+import Game.Game exposing (GamePhase(..), TurnTimer(..), createGameModel)
 import Main
 import Player exposing (Player, PlayerStatus(..))
 import Request
 import State exposing (GameModel(..))
 import Test exposing (Test, describe, test)
+import Time
 
 
 suite : Test
@@ -88,7 +89,7 @@ suite =
                             }
                     }
                     |> Expect.equal Nothing
-        , test "keeps an active animation after shared gameplay advances" <|
+        , test "stops an active animation after shared gameplay advances" <|
             \_ ->
                 let
                     game =
@@ -99,6 +100,31 @@ suite =
                         { revision = 3, targetRound = 2 }
                 in
                 Main.animationAfterGameChange Nothing (Just animation) game
+                    |> Expect.equal Nothing
+        , test "keeps an active animation while the shared interstitial remains current" <|
+            \_ ->
+                let
+                    game =
+                        Player "owner" "OWNER" Online True
+                            |> createGameModel
+
+                    state =
+                        game.state
+
+                    betweenRoundsGame =
+                        { game
+                            | state =
+                                { state
+                                    | phase = BetweenRounds
+                                    , revision = 3
+                                    , targetRound = Just 2
+                                }
+                        }
+
+                    animation =
+                        { revision = 3, targetRound = 2 }
+                in
+                Main.animationAfterGameChange Nothing (Just animation) betweenRoundsGame
                     |> Expect.equal (Just animation)
         , test "does not restart an animation the client already finished" <|
             \_ ->
@@ -122,4 +148,45 @@ suite =
                 in
                 Main.animationAfterGameChange (Just 3) Nothing betweenRoundsGame
                     |> Expect.equal Nothing
+        , test "hydrates a paused timer from persisted milliseconds" <|
+            \_ ->
+                let
+                    game =
+                        Player "owner" "OWNER" Online True
+                            |> createGameModel
+
+                    state =
+                        game.state
+                in
+                Main.hydratedTimerSeconds
+                    { game | state = { state | turnTimer = NotTicking 12500 } }
+                    |> Expect.equal 13
+        , test "uses the shared deadline and server offset to detect a due transition" <|
+            \_ ->
+                let
+                    game =
+                        Player "owner" "OWNER" Online True
+                            |> createGameModel
+
+                    state =
+                        game.state
+
+                    betweenRoundsGame =
+                        { game
+                            | state =
+                                { state
+                                    | phase = BetweenRounds
+                                    , deadlineMs = Just 10500
+                                }
+                        }
+                in
+                Expect.all
+                    [ \_ ->
+                        Main.isBetweenRoundsTransitionDue 500 (Time.millisToPosix 10000) betweenRoundsGame
+                            |> Expect.equal True
+                    , \_ ->
+                        Main.isBetweenRoundsTransitionDue 499 (Time.millisToPosix 10000) betweenRoundsGame
+                            |> Expect.equal False
+                    ]
+                    ()
         ]

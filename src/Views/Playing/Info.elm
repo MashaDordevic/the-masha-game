@@ -58,7 +58,7 @@ previousWord game =
 getTimerString : TurnTimer -> String
 getTimerString turnTimer =
     case turnTimer of
-        Game.Game.Ticking ->
+        Game.Game.Ticking _ ->
             "Pause"
 
         Game.Game.NotTicking _ ->

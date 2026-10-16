@@ -61,6 +61,10 @@ const initializeElm = (authToken) => {
     }
   });
 
+  database.ref(".info/serverTimeOffset").on("value", (snapshot) => {
+    app.ports.serverTimeOffsetChanged.send(snapshot.val() ?? 0);
+  });
+
   const GAMES_PATH = "games";
   const apiUrl =
     process.env.NODE_ENV === "development"
@@ -85,22 +89,6 @@ const initializeElm = (authToken) => {
     }
     // user online/offline status management
     managePlayerStatus({ gameId, userId });
-  });
-
-  app.ports.changeGame.subscribe((game) => {
-    console.log("updating game to", game);
-    fetch(`${apiUrl}/updateGame`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${currentAuthToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ game }),
-    }).then((response) => {
-      if (!response.ok) {
-        console.error("Unable to update game", response.status);
-      }
-    });
   });
 
   app.ports.copyInviteLink.subscribe((gameId) => {

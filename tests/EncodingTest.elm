@@ -59,7 +59,7 @@ teams =
 
 gameState : GameState
 gameState =
-    GameState words teams 2 (NotTicking 17) Game.Game.PlayingRound 8 Nothing Nothing
+    GameState words teams 2 (NotTicking 17000) Game.Game.PlayingRound 8 Nothing Nothing 3
 
 
 game : Game
@@ -106,9 +106,23 @@ suite =
                         |> Expect.equal [ Ok Online, Ok Offline ]
             , test "turn timer variants" <|
                 \_ ->
-                    [ Ticking, NotTicking 12, Restarted 60 ]
+                    [ Ticking 123456, NotTicking 12000, Restarted 60000 ]
                         |> List.map (turnTimerEncoder >> Decode.decodeValue turnTimerDecoder)
-                        |> Expect.equal [ Ok Ticking, Ok (NotTicking 12), Ok (Restarted 60) ]
+                        |> Expect.equal [ Ok (Ticking 123456), Ok (NotTicking 12000), Ok (Restarted 60000) ]
+            , test "recoverable legacy timers migrate from seconds" <|
+                \_ ->
+                    Expect.all
+                        [ \_ ->
+                            Decode.decodeString turnTimerDecoder """{"status":"paused","value":12}"""
+                                |> Expect.equal (Ok (NotTicking 12000))
+                        , \_ ->
+                            Decode.decodeString turnTimerDecoder """{"status":"restarted","value":60}"""
+                                |> Expect.equal (Ok (Restarted 60000))
+                        , \_ ->
+                            expectFailure turnTimerDecoder
+                                (Encode.object [ ( "status", Encode.string "ticking" ) ])
+                        ]
+                        ()
             , test "game phase variants" <|
                 \_ ->
                     [ Lobby, AddingWords, BetweenRounds, PlayingRound, GameFinished ]
@@ -263,6 +277,24 @@ suite =
                                 |> Expect.equal (Ok expected)
                         ]
                         ()
+            , test "legacy game state derives command metadata from its round" <|
+                \_ ->
+                    Decode.decodeString gameStateDecoder
+                        """{"round":1,"turnTimer":{"status":"paused","value":12}}"""
+                        |> Expect.equal
+                            (Ok
+                                (GameState
+                                    (Words [] Nothing [])
+                                    emptyTeams
+                                    1
+                                    (NotTicking 12000)
+                                    PlayingRound
+                                    0
+                                    Nothing
+                                    Nothing
+                                    0
+                                )
+                            )
             ]
         , describe "malformed state is rejected"
             [ test "unknown discriminators" <|
@@ -349,7 +381,7 @@ suite =
                             expectFailure gameStateDecoder
                                 (Encode.object
                                     [ ( "round", Encode.int 1 )
-                                    , ( "turnTimer", turnTimerEncoder Ticking )
+                                    , ( "turnTimer", turnTimerEncoder (Ticking 123456) )
                                     , ( "words", Encode.list identity [] )
                                     ]
                                 )

@@ -84,6 +84,7 @@ type alias Model =
     , nextRequestId : RequestId
     , environment : String
     , apiUrl : String
+    , serverTimeOffsetMs : Float
     , errors : Errors
     , isHelpDialogOpen : Bool
     , isDonateDialogOpen : Bool
@@ -119,6 +120,7 @@ type Msg
     | DeleteWord String
     | QuitGame
     | TimerTick Time.Posix
+    | ServerTimeOffsetChanged Float
     | SwitchTimer
     | WordGuessed
     | ToggleHelpDialog

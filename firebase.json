@@ -6,12 +6,16 @@
       { "source": "/addGame", "function": "addGame" },
       { "source": "/joinGame", "function": "joinGame" },
       { "source": "/findGame", "function": "findGame" },
-      { "source": "/updateGame", "function": "updateGame" },
+      { "source": "/startGame", "function": "startGame" },
       { "source": "/kickPlayer", "function": "kickPlayer" },
       { "source": "/addWord", "function": "addWord" },
       { "source": "/deleteWord", "function": "deleteWord" },
       { "source": "/enterBetweenRounds", "function": "enterBetweenRounds" },
       { "source": "/advanceRound", "function": "advanceRound" },
+      { "source": "/startTurn", "function": "startTurn" },
+      { "source": "/pauseTurn", "function": "pauseTurn" },
+      { "source": "/guessWord", "function": "guessWord" },
+      { "source": "/expireTurn", "function": "expireTurn" },
       {
         "source": "**",
         "destination": "/index.html"

@@ -7,8 +7,13 @@ const {
     createGameMutation,
     deleteWordMutation,
     enterBetweenRoundsMutation,
+    expireTurnMutation,
+    guessWordMutation,
     joinGameMutation,
-    updateGameMutation,
+    normalizeStoredGame,
+    pauseTurnMutation,
+    startGameMutation,
+    startTurnMutation,
 } = require('../lib/gameMutations.js')
 
 const player = (id, name, isOwner = false, role = 'player') => ({
@@ -35,8 +40,9 @@ const game = (round, players, overrides = {}) => ({
         revision: 0,
         targetRound: null,
         deadlineMs: null,
+        turnId: 0,
         teams: { current: null, next: [] },
-        turnTimer: { status: 'restarted', value: 60 },
+        turnTimer: { status: 'reset', remainingMs: 60_000 },
         words: { guessed: {}, next: {} },
         ...overrides.state,
     },
@@ -249,6 +255,33 @@ test('rejects legacy games with missing state or round explicitly', () => {
     )
 })
 
+test('migrates recoverable legacy phase and paused timer state', () => {
+    const root = rootAtRoundZero()
+    delete root.games.game.state.phase
+    delete root.games.game.state.revision
+    delete root.games.game.state.turnId
+    root.games.game.state.turnTimer = { status: 'paused', value: 12 }
+
+    const normalized = normalizeStoredGame(root.games.game)
+    assert.equal(normalized.state.phase, 'addingWords')
+    assert.equal(normalized.state.revision, 0)
+    assert.equal(normalized.state.turnId, 0)
+    assert.deepEqual(normalized.state.turnTimer, {
+        status: 'paused',
+        remainingMs: 12_000,
+    })
+})
+
+test('rejects a legacy running timer without a trustworthy deadline', () => {
+    const root = rootAtRoundZero()
+    delete root.games.game.state.phase
+    delete root.games.game.state.revision
+    delete root.games.game.state.turnId
+    root.games.game.state.turnTimer = { status: 'ticking' }
+
+    assert.equal(normalizeStoredGame(root.games.game), null)
+})
+
 test('allows any authenticated player to enter the first interstitial once', () => {
     const root = rootAtRoundZero()
     root.games.game.participants.players.friend = player('friend', 'FRIEND')
@@ -443,49 +476,223 @@ test('finishes the game through the final interstitial', () => {
     assert.equal(advanced.value.game.state.phase, 'finished')
 })
 
-test('protects transition-owned state from legacy full-game updates', () => {
-    const root = rootAtRoundZero()
-    root.games.game.state.words.next.word = {
-        id: 'word',
-        player: 'OWNER',
-        word: 'TABLE',
-    }
-    const entered = enterBetweenRoundsMutation(root, {
-        gameId: 'game',
-        uid: 'owner-uid',
-        expectedRevision: 0,
-        nowMs: 1_000,
-    })
-    assert.equal(entered.committed, true)
-
-    const staleProposal = {
-        ...entered.value.game,
-        id: 'game',
-        state: {
-            ...entered.value.game.state,
-            phase: 'playing',
-            revision: 99,
-        },
-    }
-    assert.deepEqual(
-        updateGameMutation(entered.root, staleProposal, 'owner-uid'),
-        { committed: false, reason: 'conflict' }
-    )
-})
-
-test('moves the owner-started lobby into word entry with a new revision', () => {
+test('moves the owner-started lobby into word entry with a narrow command', () => {
     const root = rootAtRoundZero()
     root.games.game = game(-1, {
         owner: player('owner', 'OWNER', true),
     })
-    const proposal = {
-        ...root.games.game,
-        id: 'game',
-        state: { ...root.games.game.state, round: 0 },
-    }
-
-    const started = updateGameMutation(root, proposal, 'owner-uid')
+    const started = startGameMutation(root, {
+        gameId: 'game',
+        uid: 'owner-uid',
+        expectedRevision: 0,
+    })
     assert.equal(started.committed, true)
     assert.equal(started.value.game.state.phase, 'addingWords')
     assert.equal(started.value.game.state.revision, 1)
+})
+
+const playingRoot = () => {
+    const players = {
+        owner: player('owner', 'OWNER', true),
+        explainer: player('explainer', 'EXPLAINER'),
+        teammate: player('teammate', 'TEAMMATE'),
+    }
+    return {
+        games: {
+            game: game(1, players, {
+                state: {
+                    phase: 'playing',
+                    revision: 2,
+                    turnId: 1,
+                    teams: {
+                        current: {
+                            players: [players.explainer, players.teammate],
+                            score: 0,
+                        },
+                        next: [
+                            {
+                                players: [players.owner],
+                                score: 0,
+                            },
+                        ],
+                    },
+                    words: {
+                        guessed: {},
+                        current: null,
+                        next: {
+                            first: {
+                                id: 'first',
+                                player: 'OWNER',
+                                word: 'TABLE',
+                            },
+                            second: {
+                                id: 'second',
+                                player: 'OWNER',
+                                word: 'CHAIR',
+                            },
+                        },
+                    },
+                },
+            }),
+        },
+        gameAuthorizations: {
+            game: {
+                owner: 'owner-uid',
+                explainer: 'explainer-uid',
+                teammate: 'teammate-uid',
+            },
+        },
+    }
+}
+
+const turnInput = (overrides = {}) => ({
+    gameId: 'game',
+    uid: 'explainer-uid',
+    expectedRevision: 2,
+    expectedTurnId: 1,
+    nowMs: 10_000,
+    ...overrides,
+})
+
+test('starts and pauses a turn using one server-derived deadline', () => {
+    const started = startTurnMutation(playingRoot(), turnInput())
+    assert.equal(started.committed, true)
+    assert.equal(started.value.game.state.revision, 3)
+    assert.deepEqual(started.value.game.state.turnTimer, {
+        status: 'running',
+        deadlineMs: 70_000,
+    })
+    assert.equal(started.value.game.state.words.current.word, 'TABLE')
+
+    const paused = pauseTurnMutation(
+        started.root,
+        turnInput({ expectedRevision: 3, nowMs: 25_000 })
+    )
+    assert.equal(paused.committed, true)
+    assert.deepEqual(paused.value.game.state.turnTimer, {
+        status: 'paused',
+        remainingMs: 45_000,
+    })
+})
+
+test('allows only the current explainer to start, pause, and guess', () => {
+    assert.deepEqual(
+        startTurnMutation(
+            playingRoot(),
+            turnInput({ uid: 'teammate-uid' })
+        ),
+        { committed: false, reason: 'forbidden' }
+    )
+
+    const started = startTurnMutation(playingRoot(), turnInput())
+    assert.equal(started.committed, true)
+    assert.deepEqual(
+        guessWordMutation(
+            started.root,
+            turnInput({
+                uid: 'owner-uid',
+                expectedRevision: 3,
+                nowMs: 11_000,
+            })
+        ),
+        { committed: false, reason: 'forbidden' }
+    )
+})
+
+test('scores each guess exactly once and rejects stale duplicates', () => {
+    const started = startTurnMutation(playingRoot(), turnInput())
+    const guessed = guessWordMutation(
+        started.root,
+        turnInput({ expectedRevision: 3, nowMs: 11_000 })
+    )
+    assert.equal(guessed.committed, true)
+    assert.equal(guessed.value.game.state.revision, 4)
+    assert.equal(guessed.value.game.state.teams.current.score, 1)
+    assert.equal(guessed.value.game.state.words.current.word, 'CHAIR')
+    assert.equal(guessed.value.game.state.words.guessed.first.word, 'TABLE')
+
+    assert.deepEqual(
+        guessWordMutation(
+            guessed.root,
+            turnInput({ expectedRevision: 3, nowMs: 11_001 })
+        ),
+        { committed: false, reason: 'conflict' }
+    )
+    assert.equal(guessed.value.game.state.teams.current.score, 1)
+})
+
+test('lets any player expire an overdue turn without owner liveness', () => {
+    const root = playingRoot()
+    root.games.game.participants.players.owner.status = 'offline'
+    const started = startTurnMutation(root, turnInput())
+    const expired = expireTurnMutation(
+        started.root,
+        turnInput({
+            uid: 'teammate-uid',
+            expectedRevision: 3,
+            nowMs: 70_000,
+        })
+    )
+    assert.equal(expired.committed, true)
+    assert.equal(expired.value.game.state.revision, 4)
+    assert.equal(expired.value.game.state.turnId, 2)
+    assert.equal(expired.value.game.state.teams.current.players[0].id, 'owner')
+    assert.equal(expired.value.game.state.words.current, null)
+    assert.equal(expired.value.game.state.words.next.first.word, 'TABLE')
+    assert.equal(
+        expired.value.game.participants.players.owner.status,
+        'offline'
+    )
+    assert.equal(expired.value.game.participants.players.owner.isOwner, true)
+
+    assert.deepEqual(
+        expireTurnMutation(
+            expired.root,
+            turnInput({
+                uid: 'teammate-uid',
+                expectedRevision: 3,
+                nowMs: 70_001,
+            })
+        ),
+        { committed: false, reason: 'conflict' }
+    )
+})
+
+test('serializes pause against expiry at the deadline', () => {
+    const started = startTurnMutation(playingRoot(), turnInput())
+    assert.deepEqual(
+        pauseTurnMutation(
+            started.root,
+            turnInput({ expectedRevision: 3, nowMs: 70_000 })
+        ),
+        { committed: false, reason: 'conflict' }
+    )
+    const expired = expireTurnMutation(
+        started.root,
+        turnInput({ expectedRevision: 3, nowMs: 70_000 })
+    )
+    assert.equal(expired.committed, true)
+
+    assert.deepEqual(
+        pauseTurnMutation(
+            expired.root,
+            turnInput({ expectedRevision: 3, nowMs: 70_000 })
+        ),
+        { committed: false, reason: 'conflict' }
+    )
+})
+
+test('rejects commands from an old turn even at the current revision', () => {
+    const started = startTurnMutation(playingRoot(), turnInput())
+    assert.deepEqual(
+        guessWordMutation(
+            started.root,
+            turnInput({
+                expectedRevision: 3,
+                expectedTurnId: 0,
+                nowMs: 11_000,
+            })
+        ),
+        { committed: false, reason: 'conflict' }
+    )
 })
