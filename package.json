@@ -19,7 +19,7 @@
     "build-css": "sass --no-source-map src/main.scss src/main.css",
     "watch-css": "sass --watch --no-source-map src/main.scss:src/main.css",
     "css": "npm run watch-css",
-    "deploy": "npm run build && firebase deploy --only hosting"
+    "deploy": "npm run build && firebase deploy --only hosting,functions,database,auth"
   },
   "repository": {
     "type": "git",

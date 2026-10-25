@@ -42,13 +42,7 @@ Java 21. See `TASK_EXECUTOR.md` for the complete task workflow.
 
 Login to firebase `firebase login:ci`.
 
-### Elm app
-
-The app is hosted on firebase so after building `elm-app build` run `npm run deploy`.
-
-### Google functions
-
-Go to `functions` directory `npm run build` and `npm run deploy`.
+Run `npm run deploy`. It builds the Elm app and deploys hosting, functions, database rules, and auth providers together, since the client and the functions must stay on the same protocol.
 
 ## A little bit about the code
 
