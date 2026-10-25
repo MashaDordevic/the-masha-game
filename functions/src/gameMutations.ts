@@ -349,7 +349,7 @@ const createTeams = (players: Record<string, Participant>) => {
   const orderedIds = Object.values(players)
     .filter((player) => player.role === "player")
     .map((player) => player.id)
-    .sort((left, right) => left.localeCompare(right));
+    .sort();
   const groups: string[][] = [];
   let index = 0;
   while (index < orderedIds.length) {

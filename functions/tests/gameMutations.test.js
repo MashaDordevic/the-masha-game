@@ -33,7 +33,7 @@ const createdRoot = () => {
   return created;
 };
 
-const playingGame = (created) => {
+const playingGame = (created, partnerId = "partner") => {
   const started = startGameMutation(created.root, {
     gameId: "new-game",
     uid: "creator-uid",
@@ -49,7 +49,7 @@ const playingGame = (created) => {
     joinCode: "FGHIJ",
     displayName: "Partner",
     uid: "partner-uid",
-    playerId: "partner",
+    playerId: partnerId,
   });
   const between = enterBetweenRoundsMutation(joined.root, {
     gameId: "new-game",
@@ -249,6 +249,18 @@ test("builds teams from player ids and advances on the server deadline", () => {
   ]);
   assert.equal(playing.value.game.state.phase, "playing");
   assert.equal(early.reason, "conflict");
+});
+
+test("orders teams by player id code units so push ids follow join order", () => {
+  const playing = playingGame(
+    createGameMutation(null, createInput({ playerId: "-Ob1Z" })),
+    "-Ob1a",
+  );
+
+  assert.deepEqual(playing.value.game.state.teams.current.playerIds, [
+    "-Ob1Z",
+    "-Ob1a",
+  ]);
 });
 
 test("scores and expires a turn from the server deadline", () => {
