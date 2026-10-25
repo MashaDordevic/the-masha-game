@@ -10,12 +10,16 @@
         ".read": true,
         "$playerId": {
           "$connectionId": {
-            ".write": "auth != null && root.child('gameAuthorizations').child($gameId).child($playerId).val() === auth.uid"
+            ".write": "auth != null && (root.child('gameRecords').child($gameId).child('authorizations').child($playerId).val() === auth.uid || (!root.child('gameRecords').child($gameId).exists() && root.child('gameAuthorizations').child($gameId).child($playerId).val() === auth.uid))"
           }
         }
       }
     },
     "gameAuthorizations": {
+      ".read": false,
+      ".write": false
+    },
+    "gameRecords": {
       ".read": false,
       ".write": false
     },

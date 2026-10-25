@@ -8,17 +8,19 @@ import { authenticatedUserId } from "./authorization";
 import { games } from "./db";
 import { SCHEMA_VERSION } from "./gameSchema";
 import {
-  DatabaseRoot,
+  GameRecord,
   MutationResult,
   addWordMutation,
   advanceRoundMutation,
-  createGameMutation,
+  createGameRecord,
   deleteWordMutation,
   enterBetweenRoundsMutation,
+  existingGameResult,
   expireTurnMutation,
   guessWordMutation,
   joinGameMutation,
   kickPlayerMutation,
+  normalizeDisplayName,
   parseStoredGame,
   pauseTurnMutation,
   startGameMutation,
@@ -74,18 +76,46 @@ const onAuthenticatedCorsRequest = (
     await handler(request, response, uid);
   });
 
-const runRootMutation = async <T>(
-  mutate: (root: DatabaseRoot | null) => MutationResult<T>,
+const runGameMutation = async <T>(
+  gameId: string,
+  mutate: (record: GameRecord | null) => MutationResult<T>,
 ): Promise<MutationResult<T>> => {
-  let outcome: MutationResult<T> = {
-    committed: false,
-    reason: "not-found",
+  const state: { outcome: MutationResult<T> } = {
+    outcome: { committed: false, reason: "not-found" },
   };
-  await games.transactionRoot((current) => {
-    outcome = mutate((current as DatabaseRoot | null) ?? null);
-    return outcome.committed ? outcome.root : undefined;
+  const transaction = await games.transactionGame(gameId, (record) => {
+    state.outcome = mutate(record);
+    return state.outcome.committed ? state.outcome.record : undefined;
   });
+  const outcome = state.outcome;
+  if (transaction.incompatible) {
+    return { committed: false, reason: "incompatible-game" };
+  }
+  if (!transaction.committed) {
+    const current = await games.getRecord(gameId);
+    if (current && current !== "incompatible") {
+      await games.publishGame(gameId, current);
+    }
+    return outcome.committed
+      ? { committed: false, reason: "conflict" }
+      : outcome;
+  }
+  if (outcome.committed) {
+    await games.publishGame(gameId, outcome.record);
+  }
   return outcome;
+};
+
+const claimFreshJoinCode = async (databaseGameId: string) => {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const candidates = Array.from({ length: 5 }, () => nanoid(5));
+    for (const candidate of candidates) {
+      if (await games.claimJoinCode(candidate, databaseGameId)) {
+        return candidate;
+      }
+    }
+  }
+  return null;
 };
 
 const staleClient = (request: functions.https.Request): boolean =>
@@ -141,27 +171,80 @@ const createGame = async (
   clientRequestId: string,
   name: string,
 ) => {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const databaseGameId = games.newId();
-    const playerId = games.newId();
-    if (!databaseGameId || !playerId) {
-      return { committed: false as const, reason: "invalid-input" as const };
-    }
-    const latest = await runRootMutation((root) =>
-      createGameMutation(root, {
-        uid,
-        clientRequestId,
-        databaseGameId,
-        playerId,
-        displayName: name,
-        joinCodeCandidates: Array.from({ length: 5 }, () => nanoid(5)),
-      }),
-    );
-    if (latest.committed || latest.reason !== "join-code-exhausted") {
-      return latest;
-    }
+  if (!normalizeDisplayName(name)) {
+    return { committed: false as const, reason: "invalid-input" as const };
   }
-  return { committed: false as const, reason: "join-code-exhausted" as const };
+  const databaseGameId = games.newId();
+  const playerId = games.newId();
+  if (!databaseGameId || !playerId) {
+    return { committed: false as const, reason: "invalid-input" as const };
+  }
+
+  const request = await games.reserveCreateRequest(
+    uid,
+    clientRequestId,
+    databaseGameId,
+  );
+  if (!request) {
+    return { committed: false as const, reason: "conflict" as const };
+  }
+
+  const existing = await games.getRecord(request.gameId);
+  if (existing === "incompatible") {
+    return { committed: false as const, reason: "incompatible-game" as const };
+  }
+  if (existing) {
+    const replay = existingGameResult(existing, request.gameId, uid);
+    if (replay.committed) {
+      await games.publishGame(request.gameId, replay.record);
+    }
+    return replay;
+  }
+
+  let joinCode = request.joinCode;
+  if (joinCode) {
+    const stillOwned = await games.claimJoinCode(joinCode, request.gameId);
+    if (!stillOwned) {
+      return { committed: false as const, reason: "conflict" as const };
+    }
+  } else {
+    const claimed = await claimFreshJoinCode(request.gameId);
+    if (!claimed) {
+      return { committed: false as const, reason: "join-code-exhausted" as const };
+    }
+    const remembered = await games.rememberJoinCode(
+      uid,
+      clientRequestId,
+      claimed,
+    );
+    if (!remembered) {
+      await games.releaseJoinCode(claimed, request.gameId);
+      return { committed: false as const, reason: "conflict" as const };
+    }
+    if (remembered !== claimed) {
+      await games.releaseJoinCode(claimed, request.gameId);
+    }
+    joinCode = remembered;
+  }
+
+  const ownerPlayerId =
+    request.gameId === databaseGameId ? playerId : games.newId();
+  if (!ownerPlayerId) {
+    return { committed: false as const, reason: "invalid-input" as const };
+  }
+
+  return runGameMutation(request.gameId, (record) => {
+    if (record) {
+      return existingGameResult(record, request.gameId, uid);
+    }
+    return createGameRecord({
+      uid,
+      databaseGameId: request.gameId,
+      joinCode,
+      playerId: ownerPlayerId,
+      displayName: name,
+    });
+  });
 };
 
 export const addGame = onAuthenticatedCorsRequest(async (request, response, uid) => {
@@ -206,8 +289,19 @@ export const joinGame = onAuthenticatedCorsRequest(async (request, response, uid
     response.status(500).send("Could not allocate a player identifier.");
     return;
   }
-  const result = await runRootMutation((root) =>
-    joinGameMutation(root, { joinCode: gameId, displayName, uid, playerId }),
+  const joinCodeSnapshot = await games.getDatabaseIdForJoinCode(gameId);
+  const databaseGameId = joinCodeSnapshot.val();
+  if (typeof databaseGameId !== "string") {
+    response.status(404).send("Game not found.");
+    return;
+  }
+  const result = await runGameMutation(databaseGameId, (record) =>
+    joinGameMutation(record, {
+      databaseGameId,
+      displayName,
+      uid,
+      playerId,
+    }),
   );
   if (!result.committed) {
     sendMutationFailure(response, result);
@@ -263,8 +357,8 @@ export const kickPlayer = onAuthenticatedCorsRequest(async (request, response, u
     return;
   }
 
-  const result = await runRootMutation((root) =>
-    kickPlayerMutation(root, { gameId, uid, targetPlayerId: userId }),
+  const result = await runGameMutation(gameId, (record) =>
+    kickPlayerMutation(record, { gameId, uid, targetPlayerId: userId }),
   );
   if (!result.committed) {
     sendMutationFailure(response, result);
@@ -287,8 +381,8 @@ const runRoundTransition = async (
     response.status(400).send("gameId and a valid expectedRevision are required");
     return;
   }
-  const result = await runRootMutation((root) =>
-    mutate(root, {
+  const result = await runGameMutation(gameId, (record) =>
+    mutate(record, {
       gameId,
       uid,
       expectedRevision,
@@ -322,8 +416,8 @@ export const startGame = onAuthenticatedCorsRequest(
       response.status(400).send("gameId and a valid expectedRevision are required");
       return;
     }
-    const result = await runRootMutation((root) =>
-      startGameMutation(root, { gameId, uid, expectedRevision }),
+    const result = await runGameMutation(gameId, (record) =>
+      startGameMutation(record, { gameId, uid, expectedRevision }),
     );
     if (!result.committed) {
       sendMutationFailure(response, result);
@@ -353,8 +447,8 @@ const runTurnCommand = async (
       .send("gameId, expectedRevision, and expectedTurnId are required");
     return;
   }
-  const result = await runRootMutation((root) =>
-    mutate(root, {
+  const result = await runGameMutation(gameId, (record) =>
+    mutate(record, {
       gameId,
       uid,
       expectedRevision,
@@ -403,8 +497,8 @@ export const addWord = onAuthenticatedCorsRequest(async (request, response, uid)
     return;
   }
 
-  const result = await runRootMutation((root) =>
-    addWordMutation(root, { gameId, uid, wordId, text }),
+  const result = await runGameMutation(gameId, (record) =>
+    addWordMutation(record, { gameId, uid, wordId, text }),
   );
   if (!result.committed) {
     sendMutationFailure(response, result);
@@ -423,8 +517,8 @@ export const deleteWord = onAuthenticatedCorsRequest(async (request, response, u
     return;
   }
 
-  const result = await runRootMutation((root) =>
-    deleteWordMutation(root, { gameId, uid, wordId }),
+  const result = await runGameMutation(gameId, (record) =>
+    deleteWordMutation(record, { gameId, uid, wordId }),
   );
   if (!result.committed) {
     sendMutationFailure(response, result);

@@ -9,12 +9,15 @@ import {
   parseStoredGame,
 } from "./gameSchema";
 
-export type DatabaseRoot = {
-  games?: Record<string, unknown>;
-  gameAuthorizations?: Record<string, Record<string, string>>;
-  joinCodes?: Record<string, string>;
-  createGameRequests?: Record<string, Record<string, string>>;
-  [key: string]: unknown;
+export type GameRecord = {
+  seq: number;
+  game: Game;
+  authorizations: Record<string, string>;
+};
+
+export type StoredCreateRequest = {
+  gameId: string;
+  joinCode: string | null;
 };
 
 export type MutationFailure =
@@ -28,34 +31,111 @@ export type MutationFailure =
   | "owner-removal";
 
 export type MutationResult<T> =
-  | { committed: true; root: DatabaseRoot; value: T }
+  | { committed: true; record: GameRecord; value: T }
   | { committed: false; reason: MutationFailure };
 
 const BETWEEN_ROUNDS_DURATION_MS = 7_500;
 const MAX_DISPLAY_NAME_LENGTH = 40;
 const MAX_WORD_LENGTH = 80;
 
-type StoredLookup =
-  | { game: Game }
-  | { error: "not-found" | "incompatible-game" };
+const commitRecord = (
+  record: GameRecord,
+  game: Game,
+  authorizations: Record<string, string> = record.authorizations,
+): GameRecord => ({
+  seq: record.seq + 1,
+  game,
+  authorizations,
+});
 
-const lookupGame = (root: DatabaseRoot, gameId: string): StoredLookup => {
-  const raw = root.games?.[gameId];
-  if (raw === undefined) {
-    return { error: "not-found" };
+export const projectionSequence = (value: unknown): number => {
+  if (!value || typeof value !== "object") {
+    return 0;
   }
-  const game = parseStoredGame(raw);
-  return game ? { game } : { error: "incompatible-game" };
+  const sequence = (value as { projectionSeq?: unknown }).projectionSeq;
+  return typeof sequence === "number" && Number.isFinite(sequence) ? sequence : 0;
 };
 
-const withGame = (
-  root: DatabaseRoot,
-  gameId: string,
-  game: Game,
-): DatabaseRoot => ({
-  ...root,
-  games: { ...(root.games ?? {}), [gameId]: game },
-});
+export const projectGame = (
+  current: unknown,
+  record: GameRecord,
+): (Game & { projectionSeq: number }) | undefined => {
+  if (projectionSequence(current) > record.seq) {
+    return undefined;
+  }
+  return { ...record.game, projectionSeq: record.seq };
+};
+
+export const parseCreateRequest = (value: unknown): StoredCreateRequest | null => {
+  if (typeof value === "string" && value.length > 0) {
+    return { gameId: value, joinCode: null };
+  }
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const gameId = (value as { gameId?: unknown }).gameId;
+  const joinCode = (value as { joinCode?: unknown }).joinCode;
+  if (typeof gameId !== "string" || gameId.length === 0) {
+    return null;
+  }
+  return {
+    gameId,
+    joinCode: typeof joinCode === "string" && joinCode.length > 0 ? joinCode : null,
+  };
+};
+
+const storedCreateRequest = (
+  request: StoredCreateRequest,
+): { gameId: string; joinCode?: string } =>
+  request.joinCode
+    ? { gameId: request.gameId, joinCode: request.joinCode }
+    : { gameId: request.gameId };
+
+export const reserveCreateRequest = (
+  current: unknown,
+  databaseGameId: string,
+): { gameId: string; joinCode?: string } | undefined => {
+  const existing = parseCreateRequest(current);
+  if (existing) {
+    return storedCreateRequest(existing);
+  }
+  if ((current === null || current === undefined) && databaseGameId) {
+    return { gameId: databaseGameId };
+  }
+  return undefined;
+};
+
+export const rememberJoinCode = (
+  current: unknown,
+  joinCode: string,
+): { gameId: string; joinCode?: string } | undefined => {
+  const existing = parseCreateRequest(current);
+  if (!existing || !joinCode) {
+    return undefined;
+  }
+  if (existing.joinCode) {
+    return storedCreateRequest(existing);
+  }
+  return { gameId: existing.gameId, joinCode };
+};
+
+export const claimJoinCodeValue = (
+  current: unknown,
+  databaseGameId: string,
+): string | undefined => {
+  if (current === null || current === undefined) {
+    return databaseGameId;
+  }
+  if (current === databaseGameId) {
+    return databaseGameId;
+  }
+  return undefined;
+};
+
+export const releaseJoinCodeValue = (
+  current: unknown,
+  databaseGameId: string,
+): null | undefined => (current === databaseGameId ? null : undefined);
 
 const displayName = (value: string): string | null => {
   const normalized = value.trim().replace(/\s+/g, " ");
@@ -92,15 +172,42 @@ const initialGame = (
 
 export type CreateGameInput = {
   uid: string;
-  clientRequestId: string;
   databaseGameId: string;
-  joinCodeCandidates: string[];
+  joinCode: string;
   playerId: string;
   displayName: string;
 };
 
-export const createGameMutation = (
-  root: DatabaseRoot | null,
+export const normalizeDisplayName = (value: string): string | null =>
+  displayName(value);
+
+export const existingGameResult = (
+  record: GameRecord,
+  databaseGameId: string,
+  uid: string,
+): MutationResult<{
+  databaseGameId: string;
+  game: Game;
+  player: Participant;
+  existing: boolean;
+}> => {
+  const owner = record.game.participants.players[record.game.ownerId];
+  if (!owner || record.authorizations[record.game.ownerId] !== uid) {
+    return { committed: false, reason: "conflict" };
+  }
+  return {
+    committed: true,
+    record,
+    value: {
+      databaseGameId,
+      game: record.game,
+      player: owner,
+      existing: true,
+    },
+  };
+};
+
+export const createGameRecord = (
   input: CreateGameInput,
 ): MutationResult<{
   databaseGameId: string;
@@ -108,66 +215,22 @@ export const createGameMutation = (
   player: Participant;
   existing: boolean;
 }> => {
-  const currentRoot = root ?? {};
-  const existingGameId =
-    currentRoot.createGameRequests?.[input.uid]?.[input.clientRequestId];
-  if (existingGameId) {
-    const existing = lookupGame(currentRoot, existingGameId);
-    if ("error" in existing) {
-      return { committed: false, reason: existing.error };
-    }
-    const owner = existing.game.participants.players[existing.game.ownerId];
-    const ownerUid =
-      currentRoot.gameAuthorizations?.[existingGameId]?.[existing.game.ownerId];
-    if (!owner || ownerUid !== input.uid) {
-      return { committed: false, reason: "conflict" };
-    }
-    return {
-      committed: true,
-      root: currentRoot,
-      value: {
-        databaseGameId: existingGameId,
-        game: existing.game,
-        player: owner,
-        existing: true,
-      },
-    };
-  }
-
   const ownerName = displayName(input.displayName);
-  if (!ownerName || !input.playerId || !input.databaseGameId) {
+  if (!ownerName || !input.playerId || !input.databaseGameId || !input.joinCode) {
     return { committed: false, reason: "invalid-input" };
   }
-  const joinCode = input.joinCodeCandidates.find(
-    (candidate) => !currentRoot.joinCodes?.[candidate],
-  );
-  if (!joinCode) {
-    return { committed: false, reason: "join-code-exhausted" };
-  }
-
   const player: Participant = {
     id: input.playerId,
     name: ownerName,
     role: "player",
   };
-  const game = initialGame(joinCode, player);
+  const game = initialGame(input.joinCode, player);
   return {
     committed: true,
-    root: {
-      ...currentRoot,
-      games: { ...(currentRoot.games ?? {}), [input.databaseGameId]: game },
-      joinCodes: { ...(currentRoot.joinCodes ?? {}), [joinCode]: input.databaseGameId },
-      gameAuthorizations: {
-        ...(currentRoot.gameAuthorizations ?? {}),
-        [input.databaseGameId]: { [player.id]: input.uid },
-      },
-      createGameRequests: {
-        ...(currentRoot.createGameRequests ?? {}),
-        [input.uid]: {
-          ...(currentRoot.createGameRequests?.[input.uid] ?? {}),
-          [input.clientRequestId]: input.databaseGameId,
-        },
-      },
+    record: {
+      seq: 1,
+      game,
+      authorizations: { [player.id]: input.uid },
     },
     value: {
       databaseGameId: input.databaseGameId,
@@ -179,7 +242,7 @@ export const createGameMutation = (
 };
 
 export type JoinGameInput = {
-  joinCode: string;
+  databaseGameId: string;
   displayName: string;
   uid: string;
   playerId: string;
@@ -189,7 +252,7 @@ const roleForPhase = (phase: Game["state"]["phase"]): Participant["role"] =>
   phase === "lobby" || phase === "addingWords" ? "player" : "watcher";
 
 export const joinGameMutation = (
-  root: DatabaseRoot | null,
+  record: GameRecord | null,
   input: JoinGameInput,
 ): MutationResult<{
   databaseGameId: string;
@@ -198,19 +261,12 @@ export const joinGameMutation = (
   role: Participant["role"];
   existing: boolean;
 }> => {
-  const currentRoot = root ?? {};
-  const databaseGameId = currentRoot.joinCodes?.[input.joinCode];
-  if (!databaseGameId) {
+  if (!record) {
     return { committed: false, reason: "not-found" };
   }
-  const stored = lookupGame(currentRoot, databaseGameId);
-  if ("error" in stored) {
-    return { committed: false, reason: stored.error };
-  }
-  const game = stored.game;
-  const authorizations = currentRoot.gameAuthorizations?.[databaseGameId] ?? {};
-  const existingPlayerId = Object.keys(authorizations).find(
-    (playerId) => authorizations[playerId] === input.uid,
+  const game = record.game;
+  const existingPlayerId = Object.keys(record.authorizations).find(
+    (playerId) => record.authorizations[playerId] === input.uid,
   );
   if (existingPlayerId) {
     const existingParticipant = game.participants.players[existingPlayerId];
@@ -219,9 +275,9 @@ export const joinGameMutation = (
     }
     return {
       committed: true,
-      root: currentRoot,
+      record,
       value: {
-        databaseGameId,
+        databaseGameId: input.databaseGameId,
         game,
         player: existingParticipant,
         role: existingParticipant.role,
@@ -251,15 +307,12 @@ export const joinGameMutation = (
   };
   return {
     committed: true,
-    root: {
-      ...withGame(currentRoot, databaseGameId, updatedGame),
-      gameAuthorizations: {
-        ...(currentRoot.gameAuthorizations ?? {}),
-        [databaseGameId]: { ...authorizations, [player.id]: input.uid },
-      },
-    },
+    record: commitRecord(record, updatedGame, {
+      ...record.authorizations,
+      [player.id]: input.uid,
+    }),
     value: {
-      databaseGameId,
+      databaseGameId: input.databaseGameId,
       game: updatedGame,
       player,
       role,
@@ -269,25 +322,20 @@ export const joinGameMutation = (
 };
 
 const authorizedParticipant = (
-  root: DatabaseRoot,
-  gameId: string,
-  game: Game,
+  record: GameRecord,
   uid: string,
 ): Participant | null => {
-  const authorizations = root.gameAuthorizations?.[gameId] ?? {};
-  const playerId = Object.keys(authorizations).find(
-    (id) => authorizations[id] === uid,
+  const playerId = Object.keys(record.authorizations).find(
+    (id) => record.authorizations[id] === uid,
   );
-  return playerId ? game.participants.players[playerId] ?? null : null;
+  return playerId ? record.game.participants.players[playerId] ?? null : null;
 };
 
 const authorizedPlayer = (
-  root: DatabaseRoot,
-  gameId: string,
-  game: Game,
+  record: GameRecord,
   uid: string,
 ): Participant | null => {
-  const participant = authorizedParticipant(root, gameId, game, uid);
+  const participant = authorizedParticipant(record, uid);
   return participant?.role === "player" ? participant : null;
 };
 
@@ -298,18 +346,14 @@ export type KickPlayerInput = {
 };
 
 export const kickPlayerMutation = (
-  root: DatabaseRoot | null,
+  record: GameRecord | null,
   input: KickPlayerInput,
 ): MutationResult<{ game: Game }> => {
-  if (!root) {
+  if (!record) {
     return { committed: false, reason: "not-found" };
   }
-  const stored = lookupGame(root, input.gameId);
-  if ("error" in stored) {
-    return { committed: false, reason: stored.error };
-  }
-  const game = stored.game;
-  const actor = authorizedParticipant(root, input.gameId, game, input.uid);
+  const game = record.game;
+  const actor = authorizedParticipant(record, input.uid);
   if (!actor || actor.id !== game.ownerId) {
     return { committed: false, reason: "forbidden" };
   }
@@ -326,7 +370,7 @@ export const kickPlayerMutation = (
   const { [input.targetPlayerId]: _removed, ...players } =
     game.participants.players;
   const { [input.targetPlayerId]: _authorization, ...authorizations } =
-    root.gameAuthorizations?.[input.gameId] ?? {};
+    record.authorizations;
   const updatedGame: Game = {
     ...game,
     participants: { players },
@@ -334,13 +378,7 @@ export const kickPlayerMutation = (
   };
   return {
     committed: true,
-    root: {
-      ...withGame(root, input.gameId, updatedGame),
-      gameAuthorizations: {
-        ...(root.gameAuthorizations ?? {}),
-        [input.gameId]: authorizations,
-      },
-    },
+    record: commitRecord(record, updatedGame, authorizations),
     value: { game: updatedGame },
   };
 };
@@ -474,31 +512,26 @@ type RoundTransitionInput = {
 };
 
 const requirePlayerGame = (
-  root: DatabaseRoot | null,
-  gameId: string,
+  record: GameRecord | null,
   uid: string,
 ):
-  | { root: DatabaseRoot; game: Game; player: Participant }
+  | { record: GameRecord; game: Game; player: Participant }
   | { error: MutationFailure } => {
-  if (!root) {
+  if (!record) {
     return { error: "not-found" };
   }
-  const stored = lookupGame(root, gameId);
-  if ("error" in stored) {
-    return { error: stored.error };
-  }
-  const player = authorizedPlayer(root, gameId, stored.game, uid);
+  const player = authorizedPlayer(record, uid);
   if (!player) {
     return { error: "forbidden" };
   }
-  return { root, game: stored.game, player };
+  return { record, game: record.game, player };
 };
 
 export const enterBetweenRoundsMutation = (
-  root: DatabaseRoot | null,
+  record: GameRecord | null,
   input: RoundTransitionInput,
 ): MutationResult<{ game: Game }> => {
-  const ready = requirePlayerGame(root, input.gameId, input.uid);
+  const ready = requirePlayerGame(record, input.uid);
   if ("error" in ready) {
     return { committed: false, reason: ready.error };
   }
@@ -536,16 +569,16 @@ export const enterBetweenRoundsMutation = (
   };
   return {
     committed: true,
-    root: withGame(ready.root, input.gameId, updatedGame),
+    record: commitRecord(ready.record, updatedGame),
     value: { game: updatedGame },
   };
 };
 
 export const advanceRoundMutation = (
-  root: DatabaseRoot | null,
+  record: GameRecord | null,
   input: RoundTransitionInput,
 ): MutationResult<{ game: Game }> => {
-  const ready = requirePlayerGame(root, input.gameId, input.uid);
+  const ready = requirePlayerGame(record, input.uid);
   if ("error" in ready) {
     return { committed: false, reason: ready.error };
   }
@@ -580,7 +613,7 @@ export const advanceRoundMutation = (
   };
   return {
     committed: true,
-    root: withGame(ready.root, input.gameId, updatedGame),
+    record: commitRecord(ready.record, updatedGame),
     value: { game: updatedGame },
   };
 };
@@ -609,21 +642,17 @@ export type StartGameInput = {
 };
 
 export const startGameMutation = (
-  root: DatabaseRoot | null,
+  record: GameRecord | null,
   input: StartGameInput,
 ): MutationResult<{ game: Game }> => {
-  if (!root) {
+  if (!record) {
     return { committed: false, reason: "not-found" };
   }
-  const stored = lookupGame(root, input.gameId);
-  if ("error" in stored) {
-    return { committed: false, reason: stored.error };
-  }
-  const actor = authorizedParticipant(root, input.gameId, stored.game, input.uid);
-  if (!actor || actor.id !== stored.game.ownerId) {
+  const actor = authorizedParticipant(record, input.uid);
+  if (!actor || actor.id !== record.game.ownerId) {
     return { committed: false, reason: "forbidden" };
   }
-  const { game } = stored;
+  const { game } = record;
   if (
     game.state.phase !== "lobby" ||
     game.state.round !== -1 ||
@@ -645,26 +674,25 @@ export const startGameMutation = (
   };
   return {
     committed: true,
-    root: withGame(root, input.gameId, updatedGame),
+    record: commitRecord(record, updatedGame),
     value: { game: updatedGame },
   };
 };
 
 const commitTurn = (
-  root: DatabaseRoot,
-  gameId: string,
+  record: GameRecord,
   game: Game,
 ): MutationResult<{ game: Game }> => ({
   committed: true,
-  root: withGame(root, gameId, game),
+  record: commitRecord(record, game),
   value: { game },
 });
 
 export const startTurnMutation = (
-  root: DatabaseRoot | null,
+  record: GameRecord | null,
   input: ExpectedTurnInput,
 ): MutationResult<{ game: Game }> => {
-  const ready = requirePlayerGame(root, input.gameId, input.uid);
+  const ready = requirePlayerGame(record, input.uid);
   if ("error" in ready) {
     return { committed: false, reason: ready.error };
   }
@@ -684,7 +712,7 @@ export const startTurnMutation = (
   if (!words) {
     return { committed: false, reason: "conflict" };
   }
-  return commitTurn(ready.root, input.gameId, {
+  return commitTurn(ready.record, {
     ...ready.game,
     state: {
       ...ready.game.state,
@@ -699,10 +727,10 @@ export const startTurnMutation = (
 };
 
 export const pauseTurnMutation = (
-  root: DatabaseRoot | null,
+  record: GameRecord | null,
   input: ExpectedTurnInput,
 ): MutationResult<{ game: Game }> => {
-  const ready = requirePlayerGame(root, input.gameId, input.uid);
+  const ready = requirePlayerGame(record, input.uid);
   if ("error" in ready) {
     return { committed: false, reason: ready.error };
   }
@@ -718,7 +746,7 @@ export const pauseTurnMutation = (
   ) {
     return { committed: false, reason: "conflict" };
   }
-  return commitTurn(ready.root, input.gameId, {
+  return commitTurn(ready.record, {
     ...ready.game,
     state: {
       ...ready.game.state,
@@ -732,10 +760,10 @@ export const pauseTurnMutation = (
 };
 
 export const guessWordMutation = (
-  root: DatabaseRoot | null,
+  record: GameRecord | null,
   input: ExpectedTurnInput,
 ): MutationResult<{ game: Game }> => {
-  const ready = requirePlayerGame(root, input.gameId, input.uid);
+  const ready = requirePlayerGame(record, input.uid);
   if ("error" in ready) {
     return { committed: false, reason: ready.error };
   }
@@ -756,7 +784,7 @@ export const guessWordMutation = (
     return { committed: false, reason: "conflict" };
   }
   const roundEnded = isRoundEnd(words);
-  return commitTurn(ready.root, input.gameId, {
+  return commitTurn(ready.record, {
     ...ready.game,
     state: {
       ...ready.game.state,
@@ -771,10 +799,10 @@ export const guessWordMutation = (
 };
 
 export const expireTurnMutation = (
-  root: DatabaseRoot | null,
+  record: GameRecord | null,
   input: ExpectedTurnInput,
 ): MutationResult<{ game: Game }> => {
-  const ready = requirePlayerGame(root, input.gameId, input.uid);
+  const ready = requirePlayerGame(record, input.uid);
   if ("error" in ready) {
     return { committed: false, reason: ready.error };
   }
@@ -791,7 +819,7 @@ export const expireTurnMutation = (
   ) {
     return { committed: false, reason: "conflict" };
   }
-  return commitTurn(ready.root, input.gameId, {
+  return commitTurn(ready.record, {
     ...ready.game,
     state: {
       ...ready.game.state,
@@ -820,10 +848,10 @@ const wordText = (value: string): string | null => {
 };
 
 export const addWordMutation = (
-  root: DatabaseRoot | null,
+  record: GameRecord | null,
   input: WordInput,
 ): MutationResult<{ word: Word }> => {
-  const ready = requirePlayerGame(root, input.gameId, input.uid);
+  const ready = requirePlayerGame(record, input.uid);
   if ("error" in ready) {
     return { committed: false, reason: ready.error };
   }
@@ -851,16 +879,16 @@ export const addWordMutation = (
   };
   return {
     committed: true,
-    root: withGame(ready.root, input.gameId, updatedGame),
+    record: commitRecord(ready.record, updatedGame),
     value: { word },
   };
 };
 
 export const deleteWordMutation = (
-  root: DatabaseRoot | null,
+  record: GameRecord | null,
   input: { gameId: string; uid: string; wordId: string },
 ): MutationResult<Record<string, never>> => {
-  const ready = requirePlayerGame(root, input.gameId, input.uid);
+  const ready = requirePlayerGame(record, input.uid);
   if ("error" in ready) {
     return { committed: false, reason: ready.error };
   }
@@ -881,7 +909,7 @@ export const deleteWordMutation = (
   };
   return {
     committed: true,
-    root: withGame(ready.root, input.gameId, updatedGame),
+    record: commitRecord(ready.record, updatedGame),
     value: {},
   };
 };

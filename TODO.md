@@ -17,7 +17,7 @@
 - [x] betweenRoundsView was shown only to one player, how to make sure everyone sees it?
 - [x] if a user locks their phone and then come back their timer becomes off, we should make the timer more robust, how?
 - [x] put the kick player button next to the name instead of next to the number of words
-- [ ] every game command runs a transaction on the whole database root (`games.transactionRoot` in `functions/src/db.ts`), so each guess or turn start downloads all games, users, and authorizations, and concurrent commands in unrelated games conflict and retry. Scope transactions to a single game (e.g. `games/$id` plus its authorizations), keeping join-code claiming and create-request idempotency atomic
+- [x] every game command runs a transaction on the whole database root (`games.transactionRoot` in `functions/src/db.ts`), so each guess or turn start downloads all games, users, and authorizations, and concurrent commands in unrelated games conflict and retry. Scope transactions to a single game (e.g. `games/$id` plus its authorizations), keeping join-code claiming and create-request idempotency atomic
 
 
 # Lobby
