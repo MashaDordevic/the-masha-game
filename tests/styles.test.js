@@ -10,7 +10,7 @@ test('application commands compile the Sass entrypoint before use', () => {
   assert.match(packageJson.scripts.build, /^npm run build-css && /)
   assert.equal(
     packageJson.scripts.deploy,
-    'npm run build && firebase deploy --only hosting',
+    'npm run build && firebase deploy --only hosting,functions,database,auth',
   )
 })
 
