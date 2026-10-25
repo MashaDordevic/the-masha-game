@@ -16,6 +16,8 @@ node_modules
 🔒.postman_collection_zettle.json
 firebase-debug.log
 database-debug.log
+ui-debug.log
+.firebase/
 playwright-report/
 test-results/
 
