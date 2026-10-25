@@ -1,6 +1,6 @@
 import { devices, expect, test } from '@playwright/test'
 
-test('keeps the mobile word form stable through reordering and ownership transfer', async ({
+test('keeps the mobile word form stable through reordering and a late join', async ({
   browser,
 }) => {
   const ownerContext = await browser.newContext({ ...devices['iPhone 13'] })
@@ -104,7 +104,7 @@ test('keeps the mobile word form stable through reordering and ownership transfe
   await wordInput.press('Enter')
   const submittedRequest = await addWordRequest
 
-  expect(submittedRequest.postDataJSON().word.word).toBe('SUGGESTED CAFÉ')
+  expect(submittedRequest.postDataJSON().text).toBe('SUGGESTED CAFÉ')
   expect(addWordRequestCount).toBe(1)
   await expect(wordInput).toHaveValue('')
   await expect(

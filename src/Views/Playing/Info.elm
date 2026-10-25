@@ -1,8 +1,9 @@
 module Views.Playing.Info exposing (..)
 
 import Constants exposing (countdownMoment)
-import Game.Game exposing (Game, TurnTimer)
+import Game.Game exposing (Game)
 import Game.Gameplay exposing (isLocalPlayersTurn)
+import Game.Timer
 import Html exposing (Html, button, div, h1, span, text)
 import Html.Attributes exposing (class, classList)
 import Html.Events exposing (onClick)
@@ -55,32 +56,14 @@ previousWord game =
             text ""
 
 
-getTimerString : TurnTimer -> String
-getTimerString turnTimer =
-    case turnTimer of
-        Game.Game.Ticking _ ->
-            "Pause"
-
-        Game.Game.NotTicking _ ->
-            "Continue"
-
-        Game.Game.Restarted _ ->
-            ""
-
-
 timerButton : Game -> Bool -> Html Msg
 timerButton game isExplaining =
     let
         timerString =
-            getTimerString game.state.turnTimer
+            Game.Timer.label game.state.turnTimer
 
         shouldShowButton =
-            case game.state.turnTimer of
-                Game.Game.Restarted _ ->
-                    Basics.False
-
-                _ ->
-                    True
+            timerString /= ""
     in
     if isExplaining then
         div [ class "timer-button-container" ]

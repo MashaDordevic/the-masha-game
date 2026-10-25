@@ -2,10 +2,11 @@ module AddingWordsTest exposing (suite)
 
 import Dict
 import Expect
-import Game.Game exposing (Game, createGameModel)
+import Game.Game exposing (Game)
 import Game.Words exposing (Word, Words)
+import GameFixture exposing (gameFor, player)
 import Html.Attributes as Attributes
-import Player exposing (Player, PlayerStatus(..))
+import Player exposing (Player, Role(..))
 import Request
 import State exposing (LocalUser(..), Msg(..))
 import Test exposing (Test, describe, test)
@@ -17,17 +18,17 @@ import Views.AddingWords exposing (wordsInputView, wordsStatisticsView)
 
 localPlayer : Player
 localPlayer =
-    Player "player-1" "MASHA" Online True
+    player "player-1" "MASHA" PlayerRole
 
 
 otherPlayer : Player
 otherPlayer =
-    Player "player-2" "ALICE" Online False
+    player "player-2" "ALICE" PlayerRole
 
 
 latePlayer : Player
 latePlayer =
-    Player "player-3" "ZOE" Online False
+    player "player-3" "ZOE" PlayerRole
 
 
 players : Dict.Dict String Player
@@ -43,9 +44,9 @@ words : Words
 words =
     Words []
         Nothing
-        [ { id = "word-1", word = "TABLE", player = localPlayer.name }
-        , { id = "word-2", word = "MANGO", player = localPlayer.name }
-        , { id = "word-3", word = "CHAIR", player = otherPlayer.name }
+        [ { id = "word-1", word = "TABLE", playerId = localPlayer.id }
+        , { id = "word-2", word = "MANGO", playerId = localPlayer.id }
+        , { id = "word-3", word = "CHAIR", playerId = otherPlayer.id }
         ]
 
 
@@ -53,7 +54,7 @@ gameWithWords : List Word -> Game
 gameWithWords existingWords =
     let
         initialGame =
-            createGameModel localPlayer
+            gameFor localPlayer
 
         initialState =
             initialGame.state
@@ -74,8 +75,8 @@ suite =
                 let
                     rendered =
                         gameWithWords
-                            [ { id = "word-2", word = "MANGO", player = localPlayer.name }
-                            , { id = "word-1", word = "TABLE", player = localPlayer.name }
+                            [ { id = "word-2", word = "MANGO", playerId = localPlayer.id }
+                            , { id = "word-1", word = "TABLE", playerId = localPlayer.id }
                             ]
                             |> (\game -> wordsInputView game localPlayer "" Request.idle)
                             |> Query.fromHtml
@@ -155,10 +156,10 @@ suite =
                             |> Query.findAll [ class "request" ]
                 in
                 Expect.all
-                    [ \_ -> rows |> Query.index 0 |> Query.has [ text "ALICE", text "1" ]
+                    [ \_ -> rows |> Query.index 0 |> Query.has [ text "MASHA", text "2" ]
                     , \_ ->
                         rows
-                            |> Query.index 0
+                            |> Query.index 1
                             |> Query.children []
                             |> Query.index 0
                             |> Query.has
@@ -168,11 +169,11 @@ suite =
                                 ]
                     , \_ ->
                         rows
-                            |> Query.index 0
+                            |> Query.index 1
                             |> Query.children []
                             |> Query.index 1
                             |> Query.has [ text "1" ]
-                    , \_ -> rows |> Query.index 1 |> Query.has [ text "MASHA", text "2" ]
+                    , \_ -> rows |> Query.index 1 |> Query.has [ text "ALICE", text "1" ]
                     , \_ -> rows |> Query.index 2 |> Query.has [ text "ZOE", text "0" ]
                     ]
                     ()

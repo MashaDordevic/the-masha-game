@@ -66,29 +66,34 @@ const initializeElm = (authToken) => {
   });
 
   const GAMES_PATH = "games";
+  const PRESENCE_PATH = "presence";
   const apiUrl =
     process.env.NODE_ENV === "development"
       ? "http://localhost:5001/themashagame-990a8/us-central1"
       : "";
 
+  const connectionId = crypto.randomUUID();
+
   app.ports.subscribeToGame.subscribe(({ gameId, userId }) => {
-    console.log("subscribing to game", gameId, "user: ", userId);
-    database.ref(`${GAMES_PATH}/${gameId}`).on("child_changed", () => {
-      database
-        .ref(`${GAMES_PATH}/${gameId}`)
-        .once("value")
-        .then((data) => {
-          const newGame = { ...data.val(), id: data.key };
-          console.log("new game data", newGame);
-          app.ports.gameChanged.send(newGame);
-        });
+    database.ref(`${GAMES_PATH}/${gameId}`).on("value", (data) => {
+      if (!data.exists()) {
+        return;
+      }
+      app.ports.gameChanged.send({ ...data.val(), id: data.key });
+    });
+
+    database.ref(`${PRESENCE_PATH}/${gameId}`).on("value", (snapshot) => {
+      const presence = snapshot.val() ?? {};
+      const onlinePlayerIds = Object.entries(presence)
+        .filter(([, leases]) => leases && Object.keys(leases).length > 0)
+        .map(([playerId]) => playerId);
+      app.ports.presenceChanged.send(onlinePlayerIds);
     });
 
     if (!userId) {
       return;
     }
-    // user online/offline status management
-    managePlayerStatus({ gameId, userId });
+    managePresence({ gameId, userId, connectionId });
   });
 
   app.ports.copyInviteLink.subscribe((gameId) => {
@@ -105,54 +110,17 @@ const initializeElm = (authToken) => {
     app.ports.receivedUsernameFromLocalStorage.send(username);
   });
 
-  const managePlayerStatus = ({ gameId, userId }) => {
-    // Create a reference to this user's specific status node.
-    // This is where we will store data about being online/offline.
-    var userStatusDatabaseRef = database.ref(
-      `${GAMES_PATH}/${gameId}/participants/players/${userId}/status`
+  const managePresence = ({ gameId, userId, connectionId }) => {
+    const leaseRef = database.ref(
+      `${PRESENCE_PATH}/${gameId}/${userId}/${connectionId}`
     );
 
-    // We'll create two constants which we will write to
-    // the Realtime database when this device is offline
-    // or online.
-    var isOfflineForDatabase = "offline";
-    //  = {
-    //   state: "offline",
-    //   last_changed: firebase.database.ServerValue.TIMESTAMP,
-    // };
-
-    var isOnlineForDatabase = "online";
-    // {
-    //   state: "online",
-    //   last_changed: firebase.database.ServerValue.TIMESTAMP,
-    // };
-
-    // Create a reference to the special '.info/connected' path in
-    // Realtime Database. This path returns `true` when connected
-    // and `false` when disconnected.
-    database.ref(".info/connected").on("value", function (snapshot) {
-      // If we're not currently connected, don't do anything.
-      if (snapshot.val() == false) {
+    database.ref(".info/connected").on("value", (snapshot) => {
+      if (snapshot.val() !== true) {
         return;
       }
 
-      // If we are currently connected, then use the 'onDisconnect()'
-      // method to add a set which will only trigger once this
-      // client has disconnected by closing the app,
-      // losing internet, or any other means.
-      userStatusDatabaseRef
-        .onDisconnect()
-        .set(isOfflineForDatabase)
-        .then(function () {
-          // The promise returned from .onDisconnect().set() will
-          // resolve as soon as the server acknowledges the onDisconnect()
-          // request, NOT once we've actually disconnected:
-          // https://firebase.google.com/docs/reference/js/firebase.database.OnDisconnect
-
-          // We can now safely set ourselves as 'online' knowing that the
-          // server will mark us as offline once we lose connection.
-          userStatusDatabaseRef.set(isOnlineForDatabase);
-        });
+      leaseRef.onDisconnect().remove().then(() => leaseRef.set(true));
     });
   };
 };

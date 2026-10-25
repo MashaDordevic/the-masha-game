@@ -2,6 +2,7 @@ module Views.FinishedGame exposing (..)
 
 import Array
 import Game.Game exposing (Game)
+import Game.Gameplay
 import Game.Teams exposing (getScoreboard)
 import Game.Words exposing (Word)
 import Html exposing (Html, div, h2, h3, h4, span, text)
@@ -18,7 +19,7 @@ finishedGameView game =
                 |> List.head
                 |> Maybe.map
                     (\team ->
-                        team.players
+                        Game.Gameplay.teamMembers game team
                             |> List.map .name
                             |> String.join " & "
                             |> text

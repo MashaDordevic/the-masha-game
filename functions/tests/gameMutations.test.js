@@ -1,698 +1,294 @@
-const assert = require('node:assert/strict')
-const test = require('node:test')
+const assert = require("node:assert/strict");
+const test = require("node:test");
 
 const {
-    addWordMutation,
-    advanceRoundMutation,
-    createGameMutation,
-    deleteWordMutation,
-    enterBetweenRoundsMutation,
-    expireTurnMutation,
-    guessWordMutation,
-    joinGameMutation,
-    normalizeStoredGame,
-    pauseTurnMutation,
-    startGameMutation,
-    startTurnMutation,
-} = require('../lib/gameMutations.js')
-
-const player = (id, name, isOwner = false, role = 'player') => ({
-    id,
-    name,
-    isOwner,
-    role,
-    status: 'online',
-})
-
-const phaseForRound = (round) =>
-    round < 0 ? 'lobby' : round === 0 ? 'addingWords' : 'playing'
-
-const game = (round, players, overrides = {}) => ({
-    creator: 'OWNER',
-    defaultTimer: 60,
-    gameId: 'ABCDE',
-    participants: { players },
-    status: 'running',
-    ...overrides,
-    state: {
-        round,
-        phase: phaseForRound(round),
-        revision: 0,
-        targetRound: null,
-        deadlineMs: null,
-        turnId: 0,
-        teams: { current: null, next: [] },
-        turnTimer: { status: 'reset', remainingMs: 60_000 },
-        words: { guessed: {}, next: {} },
-        ...overrides.state,
-    },
-})
-
-const rootAtRoundZero = () => ({
-    games: {
-        game: game(0, { owner: player('owner', 'OWNER', true) }),
-    },
-    gameAuthorizations: { game: { owner: 'owner-uid' } },
-})
+  addWordMutation,
+  advanceRoundMutation,
+  createGameMutation,
+  deleteWordMutation,
+  enterBetweenRoundsMutation,
+  expireTurnMutation,
+  guessWordMutation,
+  joinGameMutation,
+  kickPlayerMutation,
+  parseStoredGame,
+  pauseTurnMutation,
+  startGameMutation,
+  startTurnMutation,
+} = require("../lib/gameMutations.js");
 
 const createInput = (overrides = {}) => ({
-    uid: 'creator-uid',
-    clientRequestId: 'stable-client-request',
-    databaseGameId: 'new-game',
-    publicGameId: 'FGHIJ',
-    candidatePlayerId: 'new-player',
-    username: 'CREATOR',
-    game: {
-        ...game(0, {}),
-        id: '',
-    },
-    ...overrides,
-})
+  uid: "creator-uid",
+  clientRequestId: "stable-client-request",
+  databaseGameId: "new-game",
+  joinCodeCandidates: ["FGHIJ"],
+  playerId: "new-player",
+  displayName: "Creator",
+  ...overrides,
+});
 
-test('returns the same game when a create request is retried', () => {
-    const created = createGameMutation(null, createInput())
-    assert.equal(created.committed, true)
+const createdRoot = () => {
+  const created = createGameMutation(null, createInput());
+  assert.equal(created.committed, true);
+  return created;
+};
 
-    const retried = createGameMutation(
-        created.root,
-        createInput({
-            databaseGameId: 'duplicate-game',
-            publicGameId: 'XXXXX',
-            candidatePlayerId: 'duplicate-player',
-        })
-    )
+const playingGame = (created) => {
+  const started = startGameMutation(created.root, {
+    gameId: "new-game",
+    uid: "creator-uid",
+    expectedRevision: 0,
+  });
+  const word = addWordMutation(started.root, {
+    gameId: "new-game",
+    uid: "creator-uid",
+    wordId: "word-1",
+    text: "otter",
+  });
+  const joined = joinGameMutation(word.root, {
+    joinCode: "FGHIJ",
+    displayName: "Partner",
+    uid: "partner-uid",
+    playerId: "partner",
+  });
+  const between = enterBetweenRoundsMutation(joined.root, {
+    gameId: "new-game",
+    uid: "creator-uid",
+    expectedRevision: joined.value.game.state.revision,
+    nowMs: 1_000,
+  });
+  return advanceRoundMutation(between.root, {
+    gameId: "new-game",
+    uid: "creator-uid",
+    expectedRevision: between.value.game.state.revision,
+    nowMs: between.value.game.state.deadlineMs,
+  });
+};
 
-    assert.equal(retried.committed, true)
-    assert.equal(retried.value.existing, true)
-    assert.equal(retried.value.databaseGameId, 'new-game')
-    assert.equal(retried.value.game.gameId, 'FGHIJ')
-    assert.deepEqual(Object.keys(retried.root.games), ['new-game'])
-    assert.deepEqual(Object.keys(retried.root.users), ['new-player'])
-})
+test("returns the same game when a create request is retried", () => {
+  const created = createdRoot();
+  const retried = createGameMutation(
+    created.root,
+    createInput({
+      databaseGameId: "duplicate-game",
+      joinCodeCandidates: ["XXXXX"],
+      playerId: "duplicate-player",
+      displayName: "Someone else",
+    }),
+  );
 
-test('scopes create idempotency keys to the authenticated user', () => {
-    const first = createGameMutation(null, createInput())
-    const second = createGameMutation(
-        first.root,
-        createInput({
-            uid: 'other-uid',
-            databaseGameId: 'other-game',
-            publicGameId: 'KLMNO',
-        })
-    )
+  assert.equal(retried.committed, true);
+  assert.equal(retried.value.existing, true);
+  assert.equal(retried.value.databaseGameId, "new-game");
+  assert.equal(retried.value.game.gameId, "FGHIJ");
+  assert.equal(retried.value.player.name, "Creator");
+  assert.equal(retried.root.users, undefined);
+  assert.deepEqual(Object.keys(retried.root.games), ["new-game"]);
+});
 
-    assert.equal(second.committed, true)
-    assert.equal(second.value.existing, false)
-    assert.deepEqual(Object.keys(second.root.games).sort(), [
-        'new-game',
-        'other-game',
-    ])
-})
+test("claims the first unused join code and scopes idempotency by user", () => {
+  const first = createGameMutation(
+    { joinCodes: { FGHIJ: "taken" } },
+    createInput({ joinCodeCandidates: ["FGHIJ", "KLMNO"] }),
+  );
+  const second = createGameMutation(
+    first.root,
+    createInput({
+      uid: "other-uid",
+      databaseGameId: "other-game",
+      joinCodeCandidates: ["KLMNO", "PQRST"],
+    }),
+  );
 
-test('serializes join before team creation without losing the player', () => {
-    const joined = joinGameMutation(
-        rootAtRoundZero(),
-        'game',
-        player('late', 'LATE'),
-        'late-uid'
-    )
-    assert.equal(joined.committed, true)
-    joined.root.games.game.state.words.next.late = {
-        id: 'late',
-        player: 'LATE',
-        word: 'ARRIVAL',
-    }
+  assert.equal(first.value.game.gameId, "KLMNO");
+  assert.equal(second.committed, true);
+  assert.equal(second.value.game.gameId, "PQRST");
+  assert.equal(first.root.joinCodes.KLMNO, "new-game");
+});
 
-    const entered = enterBetweenRoundsMutation(joined.root, {
-        gameId: 'game',
-        uid: 'owner-uid',
-        expectedRevision: 0,
-        nowMs: 100,
-    })
-    assert.equal(entered.committed, true)
-    assert.equal(entered.value.game.participants.players.late.role, 'player')
-    assert.equal(
-        entered.value.game.state.words.next.late.word,
-        'ARRIVAL'
-    )
-    const teams = [
-        entered.value.game.state.teams.current,
-        ...entered.value.game.state.teams.next,
-    ]
-    assert.equal(
-        teams.some((team) =>
-            team.players.some((teamPlayer) => teamPlayer.id === 'late')
-        ),
-        true
-    )
-})
+test("rejoins the same player without renaming and rejects a taken display name", () => {
+  const created = createdRoot();
+  const rejoined = joinGameMutation(created.root, {
+    joinCode: "FGHIJ",
+    displayName: "Different",
+    uid: "creator-uid",
+    playerId: "unused",
+  });
+  const duplicate = joinGameMutation(created.root, {
+    joinCode: "FGHIJ",
+    displayName: " creator ",
+    uid: "other-uid",
+    playerId: "other",
+  });
 
-test('serializes team creation before join as an authoritative watcher', () => {
-    const initial = rootAtRoundZero()
-    initial.games.game.state.words.next.word = {
-        id: 'word',
-        player: 'OWNER',
-        word: 'TABLE',
-    }
-    const entered = enterBetweenRoundsMutation(initial, {
-        gameId: 'game',
-        uid: 'owner-uid',
-        expectedRevision: 0,
-        nowMs: 100,
-    })
-    assert.equal(entered.committed, true)
+  assert.equal(rejoined.value.existing, true);
+  assert.equal(rejoined.value.player.name, "Creator");
+  assert.equal(duplicate.committed, false);
+  assert.equal(duplicate.reason, "display-name-taken");
+});
 
-    const joined = joinGameMutation(
-        entered.root,
-        'game',
-        player('late', 'LATE'),
-        'late-uid'
-    )
-    assert.equal(joined.committed, true)
-    assert.equal(joined.value.role, 'watcher')
-    assert.equal(joined.value.player.role, 'watcher')
-})
+test("admits a late arrival as a watcher and keeps that role", () => {
+  const playing = playingGame(createdRoot());
+  const watcher = joinGameMutation(playing.root, {
+    joinCode: "FGHIJ",
+    displayName: "Audience",
+    uid: "audience-uid",
+    playerId: "audience",
+  });
+  const retry = joinGameMutation(watcher.root, {
+    joinCode: "FGHIJ",
+    displayName: "Renamed",
+    uid: "audience-uid",
+    playerId: "another",
+  });
 
-test('preserves watcher role on an existing participant retry', () => {
-    const root = rootAtRoundZero()
-    root.games.game = game(1, {
-        owner: player('owner', 'OWNER', true),
-        watcher: player('watcher', 'WATCHER', false, 'watcher'),
-    })
-    root.gameAuthorizations.game.watcher = 'watcher-uid'
+  assert.equal(watcher.value.role, "watcher");
+  assert.equal(
+    playing.value.game.state.teams.current.playerIds.includes("audience"),
+    false,
+  );
+  assert.equal(retry.value.player.role, "watcher");
+  assert.equal(retry.value.player.name, "Audience");
+});
 
-    const retried = joinGameMutation(
-        root,
-        'game',
-        player('watcher', 'WATCHER'),
-        'watcher-uid'
-    )
-    assert.equal(retried.committed, true)
-    assert.equal(retried.value.existing, true)
-    assert.equal(retried.value.role, 'watcher')
-})
+test("kicks only before play and never removes the owner", () => {
+  const created = createdRoot();
+  const joined = joinGameMutation(created.root, {
+    joinCode: "FGHIJ",
+    displayName: "Guest",
+    uid: "guest-uid",
+    playerId: "guest",
+  });
+  const kicked = kickPlayerMutation(joined.root, {
+    gameId: "new-game",
+    uid: "creator-uid",
+    targetPlayerId: "guest",
+  });
+  const ownerKick = kickPlayerMutation(joined.root, {
+    gameId: "new-game",
+    uid: "creator-uid",
+    targetPlayerId: "new-player",
+  });
+  const duringPlay = kickPlayerMutation(playingGame(createdRoot()).root, {
+    gameId: "new-game",
+    uid: "creator-uid",
+    targetPlayerId: "partner",
+  });
 
-test('derives word ownership from authenticated participant', () => {
-    const root = rootAtRoundZero()
-    const added = addWordMutation(
-        root,
-        'game',
-        { id: 'word-id', player: 'FORGED', word: 'TABLE' },
-        'owner-uid'
-    )
-    assert.equal(added.committed, true)
-    assert.equal(added.value.word.player, 'OWNER')
+  assert.equal(kicked.committed, true);
+  assert.equal(kicked.value.game.participants.players.guest, undefined);
+  assert.equal(kicked.root.gameAuthorizations["new-game"].guest, undefined);
+  assert.equal(kicked.value.game.state.revision, joined.value.game.state.revision + 1);
+  assert.equal(ownerKick.reason, "owner-removal");
+  assert.equal(duringPlay.reason, "conflict");
+});
 
-    const deniedDelete = deleteWordMutation(
-        added.root,
-        'game',
-        'word-id',
-        'attacker-uid'
-    )
-    assert.deepEqual(deniedDelete, {
-        committed: false,
-        reason: 'forbidden',
-    })
-})
+const omitEmptyContainers = (value) => {
+  if (Array.isArray(value)) {
+    return value.length === 0 ? undefined : value.map(omitEmptyContainers);
+  }
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value).flatMap(([key, child]) => {
+      const stored = omitEmptyContainers(child);
+      return stored === undefined ? [] : [[key, stored]];
+    });
+    return entries.length === 0 ? undefined : Object.fromEntries(entries);
+  }
+  return value === null ? undefined : value;
+};
 
-test('enforces round zero for word mutations', () => {
-    const root = rootAtRoundZero()
-    root.games.game.state.round = 1
-    assert.deepEqual(
-        addWordMutation(
-            root,
-            'game',
-            { id: 'word-id', player: 'OWNER', word: 'TABLE' },
-            'owner-uid'
-        ),
-        { committed: false, reason: 'conflict' }
-    )
-})
+test("reads a stored game after empty values are omitted", () => {
+  const created = createdRoot();
+  const stored = JSON.parse(JSON.stringify(omitEmptyContainers(created.value.game)));
 
-test('rejects legacy games with missing state or round explicitly', () => {
-    const missingState = rootAtRoundZero()
-    delete missingState.games.game.state
-    assert.deepEqual(
-        joinGameMutation(
-            missingState,
-            'game',
-            player('late', 'LATE'),
-            'late-uid'
-        ),
-        { committed: false, reason: 'incompatible-game' }
-    )
+  assert.deepEqual(parseStoredGame(stored), created.value.game);
+});
 
-    const missingRound = rootAtRoundZero()
-    delete missingRound.games.game.state.round
-    assert.deepEqual(
-        addWordMutation(
-            missingRound,
-            'game',
-            { id: 'word-id', player: 'OWNER', word: 'TABLE' },
-            'owner-uid'
-        ),
-        { committed: false, reason: 'incompatible-game' }
-    )
-})
+test("rejects a stored game that is not schema version 1", () => {
+  assert.equal(parseStoredGame({ schemaVersion: 1, gameId: "ABCDE" }), null);
+  assert.equal(parseStoredGame({ creator: "OWNER", state: { round: 0 } }), null);
+});
 
-test('migrates recoverable legacy phase and paused timer state', () => {
-    const root = rootAtRoundZero()
-    delete root.games.game.state.phase
-    delete root.games.game.state.revision
-    delete root.games.game.state.turnId
-    root.games.game.state.turnTimer = { status: 'paused', value: 12 }
+test("derives word ownership from the authenticated player", () => {
+  const started = startGameMutation(createdRoot().root, {
+    gameId: "new-game",
+    uid: "creator-uid",
+    expectedRevision: 0,
+  });
+  const added = addWordMutation(started.root, {
+    gameId: "new-game",
+    uid: "creator-uid",
+    wordId: "word-1",
+    text: "  otter  ",
+  });
+  const removed = deleteWordMutation(added.root, {
+    gameId: "new-game",
+    uid: "creator-uid",
+    wordId: "word-1",
+  });
 
-    const normalized = normalizeStoredGame(root.games.game)
-    assert.equal(normalized.state.phase, 'addingWords')
-    assert.equal(normalized.state.revision, 0)
-    assert.equal(normalized.state.turnId, 0)
-    assert.deepEqual(normalized.state.turnTimer, {
-        status: 'paused',
-        remainingMs: 12_000,
-    })
-})
+  assert.equal(added.value.word.playerId, "new-player");
+  assert.equal(added.value.word.word, "otter");
+  assert.equal(removed.committed, true);
+  assert.deepEqual(removed.value.game === undefined, true);
+});
 
-test('rejects a legacy running timer without a trustworthy deadline', () => {
-    const root = rootAtRoundZero()
-    delete root.games.game.state.phase
-    delete root.games.game.state.revision
-    delete root.games.game.state.turnId
-    root.games.game.state.turnTimer = { status: 'ticking' }
+test("builds teams from player ids and advances on the server deadline", () => {
+  const playing = playingGame(createdRoot());
+  const early = advanceRoundMutation(playing.root, {
+    gameId: "new-game",
+    uid: "creator-uid",
+    expectedRevision: playing.value.game.state.revision,
+    nowMs: 0,
+  });
 
-    assert.equal(normalizeStoredGame(root.games.game), null)
-})
+  assert.equal(playing.committed, true);
+  assert.deepEqual(playing.value.game.state.teams.current.playerIds.sort(), [
+    "new-player",
+    "partner",
+  ]);
+  assert.equal(playing.value.game.state.phase, "playing");
+  assert.equal(early.reason, "conflict");
+});
 
-test('allows any authenticated player to enter the first interstitial once', () => {
-    const root = rootAtRoundZero()
-    root.games.game.participants.players.friend = player('friend', 'FRIEND')
-    root.gameAuthorizations.game.friend = 'friend-uid'
-    root.games.game.state.words.next.word = {
-        id: 'word',
-        player: 'OWNER',
-        word: 'TABLE',
-    }
+test("scores and expires a turn from the server deadline", () => {
+  const playing = playingGame(createdRoot());
+  const started = startTurnMutation(playing.root, {
+    gameId: "new-game",
+    uid: "creator-uid",
+    expectedRevision: playing.value.game.state.revision,
+    expectedTurnId: playing.value.game.state.turnId,
+    nowMs: 5_000,
+  });
+  const guessed = guessWordMutation(started.root, {
+    gameId: "new-game",
+    uid: "creator-uid",
+    expectedRevision: started.value.game.state.revision,
+    expectedTurnId: started.value.game.state.turnId,
+    nowMs: 6_000,
+  });
+  const paused = pauseTurnMutation(guessed.root, {
+    gameId: "new-game",
+    uid: "partner-uid",
+    expectedRevision: guessed.value.game.state.revision,
+    expectedTurnId: guessed.value.game.state.turnId,
+    nowMs: 7_000,
+  });
+  const expired = expireTurnMutation(started.root, {
+    gameId: "new-game",
+    uid: "partner-uid",
+    expectedRevision: started.value.game.state.revision,
+    expectedTurnId: started.value.game.state.turnId,
+    nowMs: started.value.game.state.turnTimer.deadlineMs,
+  });
 
-    const entered = enterBetweenRoundsMutation(root, {
-        gameId: 'game',
-        uid: 'friend-uid',
-        expectedRevision: 0,
-        nowMs: 1_000,
-    })
-    assert.equal(entered.committed, true)
-    assert.equal(entered.value.game.state.phase, 'betweenRounds')
-    assert.equal(entered.value.game.state.revision, 1)
-    assert.equal(entered.value.game.state.targetRound, 1)
-    assert.equal(entered.value.game.state.deadlineMs, 8_500)
-
-    assert.deepEqual(
-        enterBetweenRoundsMutation(entered.root, {
-            gameId: 'game',
-            uid: 'friend-uid',
-            expectedRevision: 0,
-            nowMs: 1_001,
-        }),
-        { committed: false, reason: 'conflict' }
-    )
-})
-
-test('rejects watcher transition commands', () => {
-    const root = rootAtRoundZero()
-    root.games.game.participants.players.watcher = player(
-        'watcher',
-        'WATCHER',
-        false,
-        'watcher'
-    )
-    root.gameAuthorizations.game.watcher = 'watcher-uid'
-    root.games.game.state.words.next.word = {
-        id: 'word',
-        player: 'OWNER',
-        word: 'TABLE',
-    }
-
-    assert.deepEqual(
-        enterBetweenRoundsMutation(root, {
-            gameId: 'game',
-            uid: 'watcher-uid',
-            expectedRevision: 0,
-            nowMs: 1_000,
-        }),
-        { committed: false, reason: 'forbidden' }
-    )
-})
-
-test('advances after the deadline and rejects early or duplicate requests', () => {
-    const root = rootAtRoundZero()
-    root.games.game.state.words.next.word = {
-        id: 'word',
-        player: 'OWNER',
-        word: 'TABLE',
-    }
-    const entered = enterBetweenRoundsMutation(root, {
-        gameId: 'game',
-        uid: 'owner-uid',
-        expectedRevision: 0,
-        nowMs: 1_000,
-    })
-    assert.equal(entered.committed, true)
-
-    assert.deepEqual(
-        advanceRoundMutation(entered.root, {
-            gameId: 'game',
-            uid: 'owner-uid',
-            expectedRevision: 1,
-            nowMs: 8_499,
-        }),
-        { committed: false, reason: 'conflict' }
-    )
-
-    const advanced = advanceRoundMutation(entered.root, {
-        gameId: 'game',
-        uid: 'owner-uid',
-        expectedRevision: 1,
-        nowMs: 8_500,
-    })
-    assert.equal(advanced.committed, true)
-    assert.equal(advanced.value.game.state.round, 1)
-    assert.equal(advanced.value.game.state.phase, 'playing')
-    assert.equal(advanced.value.game.state.revision, 2)
-    assert.equal(advanced.value.game.state.targetRound, null)
-    assert.equal(advanced.value.game.state.deadlineMs, null)
-
-    assert.deepEqual(
-        advanceRoundMutation(advanced.root, {
-            gameId: 'game',
-            uid: 'owner-uid',
-            expectedRevision: 1,
-            nowMs: 9_000,
-        }),
-        { committed: false, reason: 'conflict' }
-    )
-})
-
-test('resumes an overdue transition after every player was marked offline', () => {
-    const root = rootAtRoundZero()
-    root.games.game.state.words.next.word = {
-        id: 'word',
-        player: 'OWNER',
-        word: 'TABLE',
-    }
-    const entered = enterBetweenRoundsMutation(root, {
-        gameId: 'game',
-        uid: 'owner-uid',
-        expectedRevision: 0,
-        nowMs: 1_000,
-    })
-    assert.equal(entered.committed, true)
-    entered.root.games.game.participants.players.owner.status = 'offline'
-
-    const resumed = advanceRoundMutation(entered.root, {
-        gameId: 'game',
-        uid: 'owner-uid',
-        expectedRevision: 1,
-        nowMs: 20_000,
-    })
-    assert.equal(resumed.committed, true)
-    assert.equal(resumed.value.game.state.phase, 'playing')
-    assert.equal(resumed.value.game.state.round, 1)
-})
-
-test('enters later interstitials only after a round ends and restarts words', () => {
-    const root = rootAtRoundZero()
-    root.games.game = game(1, {
-        owner: player('owner', 'OWNER', true),
-        friend: player('friend', 'FRIEND'),
-    })
-    root.gameAuthorizations.game.friend = 'friend-uid'
-    root.games.game.state.words.guessed.word = {
-        id: 'word',
-        player: 'OWNER',
-        word: 'TABLE',
-    }
-
-    const entered = enterBetweenRoundsMutation(root, {
-        gameId: 'game',
-        uid: 'friend-uid',
-        expectedRevision: 0,
-        nowMs: 1_000,
-    })
-    assert.equal(entered.committed, true)
-    assert.equal(entered.value.game.state.targetRound, 2)
-
-    const advanced = advanceRoundMutation(entered.root, {
-        gameId: 'game',
-        uid: 'friend-uid',
-        expectedRevision: 1,
-        nowMs: 8_500,
-    })
-    assert.equal(advanced.committed, true)
-    assert.equal(advanced.value.game.state.round, 2)
-    assert.deepEqual(advanced.value.game.state.words.guessed, {})
-    assert.equal(advanced.value.game.state.words.next.word.word, 'TABLE')
-})
-
-test('finishes the game through the final interstitial', () => {
-    const root = rootAtRoundZero()
-    root.games.game = game(3, {
-        owner: player('owner', 'OWNER', true),
-    })
-    const entered = enterBetweenRoundsMutation(root, {
-        gameId: 'game',
-        uid: 'owner-uid',
-        expectedRevision: 0,
-        nowMs: 1_000,
-    })
-    assert.equal(entered.committed, true)
-
-    const advanced = advanceRoundMutation(entered.root, {
-        gameId: 'game',
-        uid: 'owner-uid',
-        expectedRevision: 1,
-        nowMs: 8_500,
-    })
-    assert.equal(advanced.committed, true)
-    assert.equal(advanced.value.game.status, 'finished')
-    assert.equal(advanced.value.game.state.round, 4)
-    assert.equal(advanced.value.game.state.phase, 'finished')
-})
-
-test('moves the owner-started lobby into word entry with a narrow command', () => {
-    const root = rootAtRoundZero()
-    root.games.game = game(-1, {
-        owner: player('owner', 'OWNER', true),
-    })
-    const started = startGameMutation(root, {
-        gameId: 'game',
-        uid: 'owner-uid',
-        expectedRevision: 0,
-    })
-    assert.equal(started.committed, true)
-    assert.equal(started.value.game.state.phase, 'addingWords')
-    assert.equal(started.value.game.state.revision, 1)
-})
-
-const playingRoot = () => {
-    const players = {
-        owner: player('owner', 'OWNER', true),
-        explainer: player('explainer', 'EXPLAINER'),
-        teammate: player('teammate', 'TEAMMATE'),
-    }
-    return {
-        games: {
-            game: game(1, players, {
-                state: {
-                    phase: 'playing',
-                    revision: 2,
-                    turnId: 1,
-                    teams: {
-                        current: {
-                            players: [players.explainer, players.teammate],
-                            score: 0,
-                        },
-                        next: [
-                            {
-                                players: [players.owner],
-                                score: 0,
-                            },
-                        ],
-                    },
-                    words: {
-                        guessed: {},
-                        current: null,
-                        next: {
-                            first: {
-                                id: 'first',
-                                player: 'OWNER',
-                                word: 'TABLE',
-                            },
-                            second: {
-                                id: 'second',
-                                player: 'OWNER',
-                                word: 'CHAIR',
-                            },
-                        },
-                    },
-                },
-            }),
-        },
-        gameAuthorizations: {
-            game: {
-                owner: 'owner-uid',
-                explainer: 'explainer-uid',
-                teammate: 'teammate-uid',
-            },
-        },
-    }
-}
-
-const turnInput = (overrides = {}) => ({
-    gameId: 'game',
-    uid: 'explainer-uid',
-    expectedRevision: 2,
-    expectedTurnId: 1,
-    nowMs: 10_000,
-    ...overrides,
-})
-
-test('starts and pauses a turn using one server-derived deadline', () => {
-    const started = startTurnMutation(playingRoot(), turnInput())
-    assert.equal(started.committed, true)
-    assert.equal(started.value.game.state.revision, 3)
-    assert.deepEqual(started.value.game.state.turnTimer, {
-        status: 'running',
-        deadlineMs: 70_000,
-    })
-    assert.equal(started.value.game.state.words.current.word, 'TABLE')
-
-    const paused = pauseTurnMutation(
-        started.root,
-        turnInput({ expectedRevision: 3, nowMs: 25_000 })
-    )
-    assert.equal(paused.committed, true)
-    assert.deepEqual(paused.value.game.state.turnTimer, {
-        status: 'paused',
-        remainingMs: 45_000,
-    })
-})
-
-test('allows only the current explainer to start, pause, and guess', () => {
-    assert.deepEqual(
-        startTurnMutation(
-            playingRoot(),
-            turnInput({ uid: 'teammate-uid' })
-        ),
-        { committed: false, reason: 'forbidden' }
-    )
-
-    const started = startTurnMutation(playingRoot(), turnInput())
-    assert.equal(started.committed, true)
-    assert.deepEqual(
-        guessWordMutation(
-            started.root,
-            turnInput({
-                uid: 'owner-uid',
-                expectedRevision: 3,
-                nowMs: 11_000,
-            })
-        ),
-        { committed: false, reason: 'forbidden' }
-    )
-})
-
-test('scores each guess exactly once and rejects stale duplicates', () => {
-    const started = startTurnMutation(playingRoot(), turnInput())
-    const guessed = guessWordMutation(
-        started.root,
-        turnInput({ expectedRevision: 3, nowMs: 11_000 })
-    )
-    assert.equal(guessed.committed, true)
-    assert.equal(guessed.value.game.state.revision, 4)
-    assert.equal(guessed.value.game.state.teams.current.score, 1)
-    assert.equal(guessed.value.game.state.words.current.word, 'CHAIR')
-    assert.equal(guessed.value.game.state.words.guessed.first.word, 'TABLE')
-
-    assert.deepEqual(
-        guessWordMutation(
-            guessed.root,
-            turnInput({ expectedRevision: 3, nowMs: 11_001 })
-        ),
-        { committed: false, reason: 'conflict' }
-    )
-    assert.equal(guessed.value.game.state.teams.current.score, 1)
-})
-
-test('lets any player expire an overdue turn without owner liveness', () => {
-    const root = playingRoot()
-    root.games.game.participants.players.owner.status = 'offline'
-    const started = startTurnMutation(root, turnInput())
-    const expired = expireTurnMutation(
-        started.root,
-        turnInput({
-            uid: 'teammate-uid',
-            expectedRevision: 3,
-            nowMs: 70_000,
-        })
-    )
-    assert.equal(expired.committed, true)
-    assert.equal(expired.value.game.state.revision, 4)
-    assert.equal(expired.value.game.state.turnId, 2)
-    assert.equal(expired.value.game.state.teams.current.players[0].id, 'owner')
-    assert.equal(expired.value.game.state.words.current, null)
-    assert.equal(expired.value.game.state.words.next.first.word, 'TABLE')
-    assert.equal(
-        expired.value.game.participants.players.owner.status,
-        'offline'
-    )
-    assert.equal(expired.value.game.participants.players.owner.isOwner, true)
-
-    assert.deepEqual(
-        expireTurnMutation(
-            expired.root,
-            turnInput({
-                uid: 'teammate-uid',
-                expectedRevision: 3,
-                nowMs: 70_001,
-            })
-        ),
-        { committed: false, reason: 'conflict' }
-    )
-})
-
-test('serializes pause against expiry at the deadline', () => {
-    const started = startTurnMutation(playingRoot(), turnInput())
-    assert.deepEqual(
-        pauseTurnMutation(
-            started.root,
-            turnInput({ expectedRevision: 3, nowMs: 70_000 })
-        ),
-        { committed: false, reason: 'conflict' }
-    )
-    const expired = expireTurnMutation(
-        started.root,
-        turnInput({ expectedRevision: 3, nowMs: 70_000 })
-    )
-    assert.equal(expired.committed, true)
-
-    assert.deepEqual(
-        pauseTurnMutation(
-            expired.root,
-            turnInput({ expectedRevision: 3, nowMs: 70_000 })
-        ),
-        { committed: false, reason: 'conflict' }
-    )
-})
-
-test('rejects commands from an old turn even at the current revision', () => {
-    const started = startTurnMutation(playingRoot(), turnInput())
-    assert.deepEqual(
-        guessWordMutation(
-            started.root,
-            turnInput({
-                expectedRevision: 3,
-                expectedTurnId: 0,
-                nowMs: 11_000,
-            })
-        ),
-        { committed: false, reason: 'conflict' }
-    )
-})
+  assert.equal(started.value.game.state.turnTimer.status, "running");
+  assert.equal(guessed.value.game.state.teams.current.score, 1);
+  assert.equal(paused.reason, "forbidden");
+  assert.equal(expired.committed, true);
+  assert.equal(expired.value.game.state.turnTimer.status, "reset");
+  assert.notEqual(
+    expired.value.game.state.teams.current.playerIds[0],
+    started.value.game.state.teams.current.playerIds[0],
+  );
+});

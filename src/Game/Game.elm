@@ -1,30 +1,23 @@
 module Game.Game exposing (..)
 
-import Constants exposing (defaultTimer)
-import Dict
-import Game.Helpers exposing (optionalNullableField)
-import Game.Participants exposing (Participants, emptyParticipants, participantsDecoder, participantsEncoder)
+import Game.Helpers exposing (optionalField, optionalMaybeField)
+import Game.Participants exposing (Participants, participantsDecoder, participantsEncoder)
 import Game.Status exposing (GameStatus, gameStatusDecoder, gameStatusEncoder)
 import Game.Teams exposing (Teams, emptyTeams, teamsDecoder, teamsEncoder)
 import Game.Words exposing (Words, wordsDecoder, wordsEncoder)
 import Json.Decode exposing (Decoder, field, float, int, string)
 import Json.Encode
-import Player exposing (Player)
-
-
-type alias FindGame =
-    { gameId : String
-    }
 
 
 type alias Game =
     { id : String
     , gameId : String
-    , creator : String
+    , ownerId : String
     , status : GameStatus
     , participants : Participants
     , state : GameState
-    , defaultTimer : Int
+    , turnDurationMs : Int
+    , schemaVersion : Int
     }
 
 
@@ -55,39 +48,23 @@ type alias GameState =
     }
 
 
+andMap : Decoder a -> Decoder (a -> b) -> Decoder b
+andMap =
+    Json.Decode.map2 (|>)
+
+
 gameStateDecoder : Decoder GameState
 gameStateDecoder =
-    field "round" int
-        |> Json.Decode.andThen
-            (\round ->
-                Json.Decode.map8
-                    (\words teams turnTimer phase revision targetRound deadlineMs turnId ->
-                        GameState words teams round turnTimer phase revision targetRound deadlineMs turnId
-                    )
-                    (optionalNullableField "words" wordsDecoder (Words [] Maybe.Nothing []))
-                    (optionalNullableField "teams" teamsDecoder emptyTeams)
-                    (field "turnTimer" turnTimerDecoder)
-                    (optionalNullableField "phase" gamePhaseDecoder (phaseForRound round))
-                    (optionalNullableField "revision" int 0)
-                    (optionalNullableField "targetRound" (Json.Decode.map Just int) Nothing)
-                    (optionalNullableField "deadlineMs" (Json.Decode.map Just float) Nothing)
-                    (optionalNullableField "turnId" int 0)
-            )
-
-
-phaseForRound : Int -> GamePhase
-phaseForRound round =
-    if round < 0 then
-        Lobby
-
-    else if round == 0 then
-        AddingWords
-
-    else if round >= 4 then
-        GameFinished
-
-    else
-        PlayingRound
+    Json.Decode.succeed GameState
+        |> andMap (optionalField "words" wordsDecoder (Game.Words.Words [] Maybe.Nothing []))
+        |> andMap (optionalField "teams" teamsDecoder emptyTeams)
+        |> andMap (field "round" int)
+        |> andMap (field "turnTimer" turnTimerDecoder)
+        |> andMap (field "phase" gamePhaseDecoder)
+        |> andMap (field "revision" int)
+        |> andMap (optionalMaybeField "targetRound" int)
+        |> andMap (optionalMaybeField "deadlineMs" float)
+        |> andMap (field "turnId" int)
 
 
 gameStateEncoder : GameState -> Json.Encode.Value
@@ -107,60 +84,53 @@ gameStateEncoder gameState =
 
 emptyGameState : GameState
 emptyGameState =
-    GameState (Words [] Maybe.Nothing []) emptyTeams -1 (Restarted (defaultTimer * 1000)) Lobby 0 Nothing Nothing 0
-
-
-createGameModel : Player -> Game
-createGameModel player =
-    let
-        -- will be overwritten once created and once player gets an ID
-        participants =
-            Participants Dict.empty Dict.empty
-    in
-    Game "" "" player.name Game.Status.Open participants emptyGameState defaultTimer
+    GameState (Game.Words.Words [] Maybe.Nothing []) emptyTeams -1 (Restarted 60000) Lobby 0 Nothing Nothing 0
 
 
 gameDecoder : Decoder Game
 gameDecoder =
-    Json.Decode.map7 Game
+    Json.Decode.map8 Game
         (field "id" Json.Decode.string)
         (field "gameId" Json.Decode.string)
-        (field "creator" Json.Decode.string)
+        (field "ownerId" Json.Decode.string)
         (field "status" gameStatusDecoder)
-        (optionalNullableField "participants" participantsDecoder emptyParticipants)
-        (optionalNullableField "state" gameStateDecoder emptyGameState)
-        (field "defaultTimer" int)
+        (field "participants" participantsDecoder)
+        (field "state" gameStateDecoder)
+        (field "turnDurationMs" int)
+        (field "schemaVersion" schemaVersionDecoder)
+
+
+schemaVersionDecoder : Decoder Int
+schemaVersionDecoder =
+    int
+        |> Json.Decode.andThen
+            (\version ->
+                if version == 1 then
+                    Json.Decode.succeed version
+
+                else
+                    Json.Decode.fail "unsupported game schema"
+            )
 
 
 turnTimerDecoder : Decoder TurnTimer
 turnTimerDecoder =
     field "status" Json.Decode.string
-        |> Json.Decode.andThen turnTimerTypeDecoder
+        |> Json.Decode.andThen
+            (\timerType ->
+                case timerType of
+                    "running" ->
+                        field "deadlineMs" float |> Json.Decode.map Ticking
 
+                    "paused" ->
+                        field "remainingMs" int |> Json.Decode.map NotTicking
 
-turnTimerTypeDecoder : String -> Decoder TurnTimer
-turnTimerTypeDecoder timerType =
-    case timerType of
-        "running" ->
-            field "deadlineMs" float |> Json.Decode.map Ticking
+                    "reset" ->
+                        field "remainingMs" int |> Json.Decode.map Restarted
 
-        "paused" ->
-            Json.Decode.oneOf
-                [ field "remainingMs" int |> Json.Decode.map NotTicking
-                , field "value" int |> Json.Decode.map ((*) 1000 >> NotTicking)
-                ]
-
-        "reset" ->
-            field "remainingMs" int |> Json.Decode.map Restarted
-
-        "restarted" ->
-            field "value" int |> Json.Decode.map ((*) 1000 >> Restarted)
-
-        "ticking" ->
-            Json.Decode.fail "legacy running timer has no recoverable deadline"
-
-        _ ->
-            Json.Decode.fail "turn timer status unknown"
+                    _ ->
+                        Json.Decode.fail "turn timer status unknown"
+            )
 
 
 gamePhaseDecoder : Decoder GamePhase
@@ -209,11 +179,6 @@ gamePhaseEncoder phase =
                 "finished"
 
 
-
--- Json.Decode.oneOf
--- [ Json.Decode.bool |> Json.Decode.map (\_ -> Ticking), Json.Decode.int |> Json.Decode.map NotTicking ]
-
-
 turnTimerEncoder : TurnTimer -> Json.Encode.Value
 turnTimerEncoder turnTimer =
     case turnTimer of
@@ -232,9 +197,10 @@ gameEncoder game =
     Json.Encode.object
         [ ( "id", Json.Encode.string game.id )
         , ( "gameId", Json.Encode.string game.gameId )
-        , ( "creator", Json.Encode.string game.creator )
+        , ( "ownerId", Json.Encode.string game.ownerId )
         , ( "status", gameStatusEncoder game.status )
         , ( "participants", participantsEncoder game.participants )
         , ( "state", gameStateEncoder game.state )
-        , ( "defaultTimer", Json.Encode.int game.defaultTimer )
+        , ( "turnDurationMs", Json.Encode.int game.turnDurationMs )
+        , ( "schemaVersion", Json.Encode.int game.schemaVersion )
         ]

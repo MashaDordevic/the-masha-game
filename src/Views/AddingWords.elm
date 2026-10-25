@@ -2,6 +2,7 @@ module Views.AddingWords exposing (..)
 
 import Dict exposing (Dict)
 import Game.Game exposing (Game)
+import Game.Gameplay
 import Game.Words
 import Html exposing (Html, button, div, form, h1, h2, h3, input, label, p, span, text)
 import Html.Attributes exposing (attribute, class, disabled, for, id, placeholder, type_, value)
@@ -21,31 +22,26 @@ wordsStatisticsView words players isOwner localUser =
 
         allPlayers =
             players
-                |> Dict.values
-                |> List.map (\player -> ( player.name, 0 ))
-                |> Dict.fromList
-
-        playerByName =
-            players
-                |> Dict.values
-                |> List.map (\player -> ( player.name, player ))
-                |> Dict.fromList
+                |> Dict.map (\_ player -> ( player, 0 ))
 
         statsData =
-            Dict.union wordCountByPlayer allPlayers
+            Dict.merge
+                (\playerId ( player, _ ) result -> Dict.insert playerId ( player, 0 ) result)
+                (\playerId ( player, _ ) count result -> Dict.insert playerId ( player, count ) result)
+                (\_ _ result -> result)
+                allPlayers
+                wordCountByPlayer
+                Dict.empty
 
         stats =
             statsData
-                |> Dict.toList
+                |> Dict.values
                 |> List.map
-                    (\( playerName, wordsCount ) ->
+                    (\( player, wordsCount ) ->
                         div [ class "request", class "space-between" ]
                             [ div [ class "player-stat-name" ]
-                                [ span [] [ text playerName ]
-                                , playerByName
-                                    |> Dict.get playerName
-                                    |> Maybe.map (kickPlayerButton isOwner localUser)
-                                    |> Maybe.withDefault (text "")
+                                [ span [] [ text player.name ]
+                                , kickPlayerButton isOwner localUser player
                                 ]
                             , span [] [ text (String.fromInt wordsCount) ]
                             ]
@@ -67,7 +63,7 @@ localPlayersWords words localUser =
         localWords =
             words.next
                 |> Game.Words.wordsByPlayer
-                |> Dict.get localUser.name
+                |> Dict.get localUser.id
 
         noWords =
             case localWords of
@@ -156,6 +152,14 @@ addingWordsView model =
         hasNoWords =
             List.isEmpty model.game.state.words.next
 
+        isOwner =
+            case model.localUser of
+                LocalPlayer player ->
+                    Game.Gameplay.isOwner model.game player
+
+                LocalWatcher player ->
+                    Game.Gameplay.isOwner model.game player
+
         startButton =
             case model.localUser of
                 LocalPlayer _ ->
@@ -204,7 +208,7 @@ addingWordsView model =
             [ text "Let’s add some words" ]
         , div []
             [ wordsInput
-            , wordsStatisticsView model.game.state.words model.game.participants.players model.isOwner model.localUser
+            , wordsStatisticsView model.game.state.words model.game.participants.players isOwner model.localUser
             , startButton
             ]
         , confirmationDialog

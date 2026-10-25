@@ -1,13 +1,11 @@
 module Debugger.Update exposing (..)
 
 import Dict
-import Fixtures.Game exposing (emptyGame, getPlayerOnTurn, guessNextWords, lobbyGame, newlyStartedGame, restartWordsToFixture)
+import Fixtures.Game exposing (emptyGame, getPlayerOnTurn, guessNextWords, lobbyGame, newlyStartedGame, restartWordsToFixture, rotateCurrentTeam)
 import Game.Game exposing (Game)
-import Game.Teams exposing (advanceCurrentTeam)
 import Maybe exposing (withDefault)
 import Player exposing (Player)
 import State exposing (GameModel(..), LocalUser(..), Model, Msg(..), PlayingGameModel)
-import Game.Words exposing (restartWords)
 
 
 upadateGame : PlayingGameModel -> Game -> GameModel
@@ -44,26 +42,7 @@ removePlayer playerId game =
 
 getOwner : PlayingGameModel -> Maybe Player
 getOwner gameModel =
-    gameModel.game.participants.players
-        |> Dict.toList
-        |> List.map Tuple.second
-        |> List.filter
-            (\pl -> pl.isOwner)
-        |> List.head
-
-
-isOwner : PlayingGameModel -> Player -> Bool
-isOwner gameModel player =
-    let
-        owner =
-            getOwner gameModel
-    in
-    case owner of
-        Just own ->
-            own.id == player.id
-
-        Nothing ->
-            False
+    Dict.get gameModel.game.ownerId gameModel.game.participants.players
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -84,23 +63,7 @@ update msg model =
                     ( { model | currentGame = upadateGame gameModel (restartWordsToFixture gameModel.game) }, Cmd.none )
 
                 DebugSetNextPlayer ->
-                    let
-                        newTeams =
-                            advanceCurrentTeam gameModel.game.state.teams
-
-                        oldState =
-                            gameModel.game.state
-
-                        newState =
-                            { oldState | teams = newTeams }
-
-                        oldGame =
-                            gameModel.game
-
-                        newGame =
-                            { oldGame | state = newState }
-                    in
-                    ( { model | currentGame = upadateGame gameModel newGame }, Cmd.none )
+                    ( { model | currentGame = upadateGame gameModel (rotateCurrentTeam gameModel.game) }, Cmd.none )
 
                 DebugSetPlayerOnTurn ->
                     let
@@ -117,7 +80,7 @@ update msg model =
                 DebugSetPlayerOwner ->
                     case getOwner gameModel of
                         Just player ->
-                            ( { model | currentGame = Playing { gameModel | localUser = LocalPlayer player, isOwner = True } }, Cmd.none )
+                            ( { model | currentGame = Playing { gameModel | localUser = LocalPlayer player } }, Cmd.none )
 
                         Maybe.Nothing ->
                             ( model, Cmd.none )
@@ -127,11 +90,14 @@ update msg model =
 
                 DebugSetRound newRound ->
                     let
-                        oldState = gameModel.game.state
-                        newWords = restartWords oldState.words
-                        newState = { oldState | words = newWords, round = newRound }
-                        oldGame = gameModel.game
-                        newGame = { oldGame | state = newState }
+                        oldGame =
+                            gameModel.game
+
+                        oldState =
+                            oldGame.state
+
+                        newGame =
+                            { oldGame | state = { oldState | round = newRound } }
                     in
                     ( { model | currentGame = upadateGame gameModel newGame }, Cmd.none )
 

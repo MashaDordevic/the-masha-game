@@ -3,14 +3,9 @@ import { expect, test } from '@playwright/test'
 test('recovers after an owner disconnect, reconnect, and competing commands', async ({
   browser,
 }) => {
+  test.setTimeout(180_000)
   const ownerContext = await browser.newContext()
   const ownerPage = await ownerContext.newPage()
-  await ownerPage.route('**/addGame', async (route) => {
-    const request = route.request()
-    const body = request.postDataJSON()
-    body.game.defaultTimer = 2
-    await route.continue({ postData: JSON.stringify(body) })
-  })
 
   await ownerPage.goto('/')
   await ownerPage.getByRole('button', { name: 'Create new game' }).click()
@@ -62,7 +57,7 @@ test('recovers after an owner disconnect, reconnect, and competing commands', as
 
   await expect(
     playerPage.getByRole('heading', { name: 'It’s your turn' })
-  ).toBeVisible({ timeout: 5_000 })
+  ).toBeVisible({ timeout: 70_000 })
 
   await playerPage.reload()
   await playerPage.getByRole('textbox', { name: 'Nickname' }).fill('PLAYER')
@@ -116,6 +111,7 @@ test('recovers after an owner disconnect, reconnect, and competing commands', as
     const waitMs = Math.max(0, game.state.turnTimer.deadlineMs - Date.now() - 100)
     await new Promise((resolve) => setTimeout(resolve, waitMs))
     const body = JSON.stringify({
+      protocolVersion: 1,
       gameId,
       expectedRevision: game.state.revision,
       expectedTurnId: game.state.turnId,

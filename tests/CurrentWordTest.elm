@@ -1,31 +1,29 @@
 module CurrentWordTest exposing (suite)
 
 import Expect
-import Game.Game exposing (createGameModel)
 import Game.Teams exposing (Team, Teams)
 import Game.Words exposing (Word, Words)
-import Player exposing (Player, PlayerStatus(..))
+import Player exposing (Role(..))
 import State exposing (LocalUser(..))
 import Test exposing (Test, describe, test)
 import Test.Html.Query as Query
 import Test.Html.Selector exposing (tag, text)
 import Views.Playing.CurrentWord exposing (currentWordView)
+import GameFixture exposing (gameFor, player)
 
 
-explainer : Player
 explainer =
-    Player "explainer" "EXPLAINER" Online False
+    player "explainer" "EXPLAINER" PlayerRole
 
 
-watcher : Player
 watcher =
-    Player "watcher" "WATCHER" Online False
+    player "watcher" "WATCHER" WatcherRole
 
 
 gameWithCurrentWord =
     let
         game =
-            createGameModel explainer
+            gameFor explainer
 
         state =
             game.state
@@ -33,8 +31,8 @@ gameWithCurrentWord =
     { game
         | state =
             { state
-                | words = Words [] (Just (Word "TABLE" "AUTHOR" "word-1")) []
-                , teams = Teams (Just (Team [ explainer ] 0)) []
+                | words = Words [] (Just (Word "TABLE" explainer.id "word-1")) []
+                , teams = Teams (Just (Team [ explainer.id ] 0)) []
             }
     }
 

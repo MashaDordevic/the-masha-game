@@ -1,10 +1,12 @@
 module Views.Playing.Playing exposing (..)
 
 import Game.Game exposing (Game)
+import Game.Gameplay
+import Game.Timer
 import Html exposing (Html, div, span, text)
 import Html.Attributes exposing (class)
-import Player exposing (Player, PlayerStatus(..))
 import State exposing (Msg, PlayingGameModel)
+import Time
 import Views.Playing.CurrentWord exposing (currentWordView)
 import Views.Playing.Info exposing (infoView)
 import Views.Playing.Round exposing (roundView)
@@ -23,20 +25,14 @@ playingNow game =
                 |> Maybe.withDefault 0
 
         explainingPlayer =
-            case teamOnTurn of
-                Just currentTeam ->
-                    currentTeam.players
-                        |> List.head
-                        |> Maybe.withDefault (Player "" "n/a" Offline False)
-                        |> .name
-
-                Nothing ->
-                    "n/a"
+            Game.Gameplay.explainer game
+                |> Maybe.map .name
+                |> Maybe.withDefault "n/a"
 
         guessingPlayersNames =
             case teamOnTurn of
                 Just currentTeam ->
-                    currentTeam.players
+                    Game.Gameplay.teamMembers game currentTeam
                         |> List.drop 1
                         |> List.map .name
 
@@ -64,13 +60,17 @@ playingNow game =
         ]
 
 
-playingView : PlayingGameModel -> Html Msg
-playingView model =
+playingView : Float -> Time.Posix -> PlayingGameModel -> Html Msg
+playingView serverTimeOffsetMs now model =
+    let
+        secondsLeft =
+            Game.Timer.remainingSeconds serverTimeOffsetMs now model.game.state.turnTimer
+    in
     div [ class "playing-container" ]
         [ div [ class "playing-now" ]
             [ roundView model.game.state.round
-            , currentWordView model.game model.localUser model.turnTimer
-            , infoView model.game model.localUser model.turnTimer
+            , currentWordView model.game model.localUser secondsLeft
+            , infoView model.game model.localUser secondsLeft
             , playingNow model.game
             ]
         , teamsView model.game

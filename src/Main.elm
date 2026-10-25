@@ -4,25 +4,22 @@ import Api
 import Browser
 import Browser.Dom
 import Browser.Navigation as Nav
-import Debugger.Update exposing (isOwner)
-import Delay
+import Debugger.Update
 import Dict
 import Game.Game exposing (..)
 import Game.Gameplay
-import Game.Participants
+import Game.Interstitial
 import Game.Words exposing (Word)
+import Set
 import Http
 import Json.Decode
 import Json.Encode
-import Player exposing (Player, PlayerStatus(..))
 import Request
 import Route
 import State exposing (Flags, GameModel(..), LocalUser(..), Model, Msg(..))
-import String exposing (join)
 import Task
 import Time
 import Url
-import User exposing (..)
 import Views.View exposing (view)
 
 
@@ -57,6 +54,9 @@ port authTokenChanged : (String -> msg) -> Sub msg
 
 
 port serverTimeOffsetChanged : (Float -> msg) -> Sub msg
+
+
+port presenceChanged : (List String -> msg) -> Sub msg
 
 
 
@@ -101,6 +101,7 @@ init flags url navKey =
                     0
       , apiUrl = apiUrl
       , serverTimeOffsetMs = 0
+      , now = Time.millisToPosix 0
       , errors = []
       , isHelpDialogOpen = False
       , isDonateDialogOpen = False
@@ -117,106 +118,50 @@ init flags url navKey =
     )
 
 
-betweenRoundsAnimation : Game -> Maybe State.BetweenRoundsAnimation
-betweenRoundsAnimation game =
-    case ( game.state.phase, game.state.targetRound ) of
-        ( BetweenRounds, Just targetRound ) ->
-            Just
-                { revision = game.state.revision
-                , targetRound = targetRound
-                }
+localPlayerId : LocalUser -> String
+localPlayerId localUser =
+    case localUser of
+        LocalPlayer player ->
+            player.id
 
-        _ ->
-            Nothing
+        LocalWatcher player ->
+            player.id
 
 
-startBetweenRoundsAnimation : Game -> ( Maybe State.BetweenRoundsAnimation, Cmd Msg )
-startBetweenRoundsAnimation game =
-    case betweenRoundsAnimation game of
-        Just animation ->
-            ( Just animation
-            , Delay.after 7500 (BetweenRoundsAnimationFinished animation.revision)
-            )
+presentGame : State.PlayingGameModel -> Game -> Game
+presentGame gameModel game =
+    Game.Gameplay.withPresence (localPlayerId gameModel.localUser) gameModel.onlinePlayerIds game
+
+
+newPlaying : Game -> LocalUser -> State.PlayingGameModel
+newPlaying game localUser =
+    let
+        gameModel =
+            { localUser = localUser
+            , game = game
+            , wordInput = ""
+            , addWordRequest = Request.idle
+            , onlinePlayerIds = Set.empty
+            , isStartConfirmationOpen = False
+            , isStartRequestPending = False
+            , startRequestError = Nothing
+            , isDebugFixture = False
+            }
+    in
+    { gameModel | game = presentGame gameModel game }
+
+
+dueTransitionCmd : Model -> Game -> Cmd Msg
+dueTransitionCmd model game =
+    case Game.Interstitial.dueTransition model.serverTimeOffsetMs model.now game of
+        Just Game.Interstitial.EnterBetweenRounds ->
+            Api.enterBetweenRounds model.apiUrl model.authToken game.id game.state.revision
+
+        Just Game.Interstitial.AdvanceRound ->
+            Api.advanceRound model.apiUrl model.authToken game.id game.state.revision
 
         Nothing ->
-            ( Nothing, Cmd.none )
-
-
-animationAfterGameChange : Maybe Int -> Maybe State.BetweenRoundsAnimation -> Game -> Maybe State.BetweenRoundsAnimation
-animationAfterGameChange completedRevision currentAnimation game =
-    if game.state.phase /= BetweenRounds then
-        Nothing
-
-    else
-        case currentAnimation of
-            Just _ ->
-                currentAnimation
-
-            Nothing ->
-                case betweenRoundsAnimation game of
-                    Just animation ->
-                        if completedRevision == Just animation.revision then
-                            Nothing
-
-                        else
-                            Just animation
-
-                    Nothing ->
-                        Nothing
-
-
-millisecondsToSeconds : Int -> Int
-millisecondsToSeconds milliseconds =
-    ceiling (toFloat milliseconds / 1000)
-
-
-hydratedTimerSeconds : Game -> Int
-hydratedTimerSeconds game =
-    case game.state.turnTimer of
-        Ticking _ ->
-            game.defaultTimer
-
-        Game.Game.NotTicking remainingMs ->
-            millisecondsToSeconds remainingMs
-
-        Game.Game.Restarted remainingMs ->
-            millisecondsToSeconds remainingMs
-
-
-isBetweenRoundsTransitionDue : Float -> Time.Posix -> Game -> Bool
-isBetweenRoundsTransitionDue serverTimeOffsetMs now game =
-    case ( game.state.phase, game.state.deadlineMs ) of
-        ( BetweenRounds, Just deadlineMs ) ->
-            toFloat (Time.posixToMillis now) + serverTimeOffsetMs >= deadlineMs
-
-        _ ->
-            False
-
-
-requestDueTransition : Model -> State.PlayingGameModel -> Cmd Msg
-requestDueTransition model gameModel =
-    case gameModel.localUser of
-        LocalWatcher _ ->
             Cmd.none
-
-        LocalPlayer _ ->
-            let
-                game =
-                    gameModel.game
-            in
-            case game.state.phase of
-                PlayingRound ->
-                    if Game.Gameplay.isRoundEnd game.state then
-                        Api.enterBetweenRounds model.apiUrl model.authToken game.id game.state.revision
-
-                    else
-                        Cmd.none
-
-                BetweenRounds ->
-                    Task.perform TransitionTick Time.now
-
-                _ ->
-                    Cmd.none
 
 
 gameChangedUpdate : Json.Decode.Value -> Model -> State.PlayingGameModel -> ( Model, Cmd Msg )
@@ -228,38 +173,24 @@ gameChangedUpdate value model gameModel =
 
             else
                 let
-                    newTimer =
-                        case decodedGame.state.turnTimer of
-                            Ticking _ ->
-                                gameModel.turnTimer
+                    remainsInWordEntry =
+                        decodedGame.state.phase == AddingWords
 
-                            Game.Game.NotTicking remainingMs ->
-                                millisecondsToSeconds remainingMs
+                    nextGameModel =
+                        { gameModel
+                            | game = presentGame gameModel decodedGame
+                            , isStartConfirmationOpen = gameModel.isStartConfirmationOpen && remainsInWordEntry
+                            , isStartRequestPending = gameModel.isStartRequestPending && remainsInWordEntry
+                            , isDebugFixture = False
+                        }
 
-                            Game.Game.Restarted remainingMs ->
-                                millisecondsToSeconds remainingMs
-
-                    isLocalPlayerOwner =
+                    transitionCmd =
                         case gameModel.localUser of
-                            LocalPlayer localPlayer ->
-                                Game.Gameplay.isPlayerOnwer decodedGame localPlayer
-
                             LocalWatcher _ ->
-                                False
-
-                    nextAnimation =
-                        animationAfterGameChange
-                            gameModel.completedBetweenRoundsRevision
-                            gameModel.betweenRoundsAnimation
-                            decodedGame
-
-                    animationCmd =
-                        case ( gameModel.betweenRoundsAnimation, nextAnimation ) of
-                            ( Nothing, Just animation ) ->
-                                Delay.after 7500 (BetweenRoundsAnimationFinished animation.revision)
-
-                            _ ->
                                 Cmd.none
+
+                            LocalPlayer _ ->
+                                dueTransitionCmd model nextGameModel.game
 
                     timerRefreshCmd =
                         case decodedGame.state.turnTimer of
@@ -268,53 +199,12 @@ gameChangedUpdate value model gameModel =
 
                             _ ->
                                 Cmd.none
-
-                    remainsInWordEntry =
-                        decodedGame.state.phase == AddingWords
-
-                    nextGameModel =
-                        { gameModel
-                            | game = decodedGame
-                            , isOwner = isLocalPlayerOwner
-                            , turnTimer = newTimer
-                            , betweenRoundsAnimation = nextAnimation
-                            , isStartConfirmationOpen = gameModel.isStartConfirmationOpen && remainsInWordEntry
-                            , isStartRequestPending = gameModel.isStartRequestPending && remainsInWordEntry
-                            , isDebugFixture = False
-                        }
                 in
                 ( { model | currentGame = Playing nextGameModel }
-                , Cmd.batch
-                    [ animationCmd
-                    , timerRefreshCmd
-                    , requestDueTransition model nextGameModel
-                    ]
+                , Cmd.batch [ timerRefreshCmd, transitionCmd ]
                 )
 
         Err _ ->
-            ( model, Cmd.none )
-
-
-animationFinishedUpdate : Int -> Model -> State.PlayingGameModel -> ( Model, Cmd Msg )
-animationFinishedUpdate revision model gameModel =
-    case gameModel.betweenRoundsAnimation of
-        Just animation ->
-            if animation.revision == revision then
-                let
-                    nextGameModel =
-                        { gameModel
-                            | betweenRoundsAnimation = Nothing
-                            , completedBetweenRoundsRevision = Just revision
-                        }
-                in
-                ( { model | currentGame = Playing nextGameModel }
-                , requestDueTransition model nextGameModel
-                )
-
-            else
-                ( model, Cmd.none )
-
-        Nothing ->
             ( model, Cmd.none )
 
 
@@ -347,13 +237,13 @@ playingGameUpdate msg model =
                                     Just request ->
                                         let
                                             newWord =
-                                                Game.Words.wordWithKey 0 (Word submittedWord localPlayer.name "")
+                                                Game.Words.wordWithKey 0 (Word submittedWord localPlayer.id "")
                                         in
                                         ( { model
                                             | currentGame = Playing { gameModel | addWordRequest = request }
                                             , nextRequestId = model.nextRequestId + 1
                                           }
-                                        , Api.addWord model.apiUrl model.authToken model.nextRequestId game.id newWord
+                                        , Api.addWord model.apiUrl model.authToken model.nextRequestId game.id newWord.id newWord.word
                                         )
 
                                     Nothing ->
@@ -381,26 +271,20 @@ playingGameUpdate msg model =
                             ( { model | currentGame = Initial { pinInput = "", instructionSlideNumber = 1 }, errors = [] }, Cmd.none )
 
                         TimerTick now ->
-                            case game.state.turnTimer of
-                                Ticking deadlineMs ->
-                                    let
-                                        remainingMs =
-                                            deadlineMs - (toFloat (Time.posixToMillis now) + model.serverTimeOffsetMs)
-
-                                        remainingSeconds =
-                                            max 0 (ceiling (remainingMs / 1000))
-
-                                        expiryCmd =
-                                            if remainingMs <= 0 then
+                            let
+                                expiryCmd =
+                                    case game.state.turnTimer of
+                                        Ticking deadlineMs ->
+                                            if toFloat (Time.posixToMillis now) + model.serverTimeOffsetMs >= deadlineMs then
                                                 Api.expireTurn model.apiUrl model.authToken game.id game.state.revision game.state.turnId
 
                                             else
                                                 Cmd.none
-                                    in
-                                    ( { model | currentGame = Playing { gameModel | turnTimer = remainingSeconds } }, expiryCmd )
 
-                                _ ->
-                                    ( model, Cmd.none )
+                                        _ ->
+                                            Cmd.none
+                            in
+                            ( { model | now = now }, expiryCmd )
 
                         SwitchTimer ->
                             let
@@ -467,18 +351,22 @@ playingGameUpdate msg model =
                                 Err _ ->
                                     ( { model | currentGame = Playing { gameModel | isStartRequestPending = False, startRequestError = Just "Could not start the game. Try again." } }, Cmd.none )
 
-                        BetweenRoundsAnimationFinished revision ->
-                            animationFinishedUpdate revision model gameModel
-
                         TransitionTick now ->
-                            if isBetweenRoundsTransitionDue model.serverTimeOffsetMs now game then
-                                ( model, Api.advanceRound model.apiUrl model.authToken game.id game.state.revision )
+                            let
+                                timedModel =
+                                    { model | now = now }
+                            in
+                            ( timedModel, dueTransitionCmd timedModel game )
 
-                            else
-                                ( model, Cmd.none )
+                        PresenceChanged onlinePlayerIds ->
+                            let
+                                nextGameModel =
+                                    { gameModel | onlinePlayerIds = Set.fromList onlinePlayerIds }
+                            in
+                            ( { model | currentGame = Playing { nextGameModel | game = presentGame nextGameModel gameModel.game } }, Cmd.none )
 
                         _ ->
-                            if gameModel.isOwner then
+                            if Game.Gameplay.isOwner game localPlayer then
                                 case msg of
                                     CopyInviteLink ->
                                         ( model, copyInviteLink (Json.Encode.string game.gameId) )
@@ -504,8 +392,12 @@ playingGameUpdate msg model =
                         GameChanged value ->
                             gameChangedUpdate value model gameModel
 
-                        BetweenRoundsAnimationFinished revision ->
-                            animationFinishedUpdate revision model gameModel
+                        PresenceChanged onlinePlayerIds ->
+                            let
+                                nextGameModel =
+                                    { gameModel | onlinePlayerIds = Set.fromList onlinePlayerIds }
+                            in
+                            ( { model | currentGame = Playing { nextGameModel | game = presentGame nextGameModel gameModel.game } }, Cmd.none )
 
                         _ ->
                             ( model, Cmd.none )
@@ -747,19 +639,11 @@ update msg model =
                             else
                                 case Request.begin model.nextRequestId gameModel.request of
                                     Just request ->
-                                        let
-                                            -- will be overwritten because the user doesn't have an ID yet
-                                            tempPlayer =
-                                                Player "" gameModel.nameInput Online True
-
-                                            newGame =
-                                                Game.Game.createGameModel tempPlayer
-                                        in
                                         ( { model
                                             | currentGame = CreatingGame { gameModel | request = request }
                                             , nextRequestId = model.nextRequestId + 1
                                           }
-                                        , Api.addGame model.apiUrl model.authToken model.nextRequestId gameModel.clientRequestId gameModel.nameInput newGame
+                                        , Api.addGame model.apiUrl model.authToken model.nextRequestId gameModel.clientRequestId gameModel.nameInput
                                         )
 
                                     Nothing ->
@@ -772,7 +656,7 @@ update msg model =
                             else
                                 case result of
                                     Ok ( game, player ) ->
-                                        ( { model | currentGame = Playing { game = game, isOwner = True, localUser = LocalPlayer player, wordInput = "", addWordRequest = Request.idle, turnTimer = hydratedTimerSeconds game, betweenRoundsAnimation = Nothing, completedBetweenRoundsRevision = Nothing, isStartConfirmationOpen = False, isStartRequestPending = False, startRequestError = Nothing, isDebugFixture = False } }
+                                        ( { model | currentGame = Playing (newPlaying game (LocalPlayer player)) }
                                         , Cmd.batch
                                             [ subscribeToGame
                                                 (Json.Encode.object
@@ -825,14 +709,6 @@ update msg model =
                                         case maybeLocalUser of
                                             Just localUser ->
                                                 let
-                                                    isLocalPlayerOwner =
-                                                        case localUser of
-                                                            LocalPlayer player ->
-                                                                Game.Gameplay.isPlayerOnwer joinedGameInfo.game player
-
-                                                            _ ->
-                                                                False
-
                                                     localUserName =
                                                         case localUser of
                                                             LocalPlayer player ->
@@ -840,11 +716,8 @@ update msg model =
 
                                                             LocalWatcher watcher ->
                                                                 watcher.name
-
-                                                    ( initialAnimation, animationCmd ) =
-                                                        startBetweenRoundsAnimation joinedGameInfo.game
                                                 in
-                                                ( { model | currentGame = Playing { localUser = localUser, isOwner = isLocalPlayerOwner, game = joinedGameInfo.game, wordInput = "", addWordRequest = Request.idle, turnTimer = hydratedTimerSeconds joinedGameInfo.game, betweenRoundsAnimation = initialAnimation, completedBetweenRoundsRevision = Nothing, isStartConfirmationOpen = False, isStartRequestPending = False, startRequestError = Nothing, isDebugFixture = False } }
+                                                ( { model | currentGame = Playing (newPlaying joinedGameInfo.game localUser) }
                                                 , Cmd.batch
                                                     [ subscribeToGame
                                                         (Json.Encode.object
@@ -853,7 +726,6 @@ update msg model =
                                                             ]
                                                         )
                                                     , saveUsernameToLocalStorage (Json.Encode.string localUserName)
-                                                    , animationCmd
                                                     ]
                                                 )
 
@@ -936,6 +808,7 @@ subscriptions model =
         , authTokenChanged AuthTokenChanged
         , serverTimeOffsetChanged ServerTimeOffsetChanged
         , receivedUsernameFromLocalStorage ReceivedUsernameFromLocalStorage
+        , presenceChanged PresenceChanged
         , timerSub
         , transitionSub
         ]

@@ -1,12 +1,22 @@
 module Api exposing (..)
 
 import Game.Game exposing (Game, gameDecoder)
-import Game.Words exposing (Word, wordEncoder)
 import Http
 import Json.Decode
 import Json.Encode
 import Player exposing (Player, playerDecoder)
 import State exposing (..)
+
+
+protocolVersion : Int
+protocolVersion =
+    1
+
+
+commandBody : List ( String, Json.Encode.Value ) -> Http.Body
+commandBody fields =
+    Http.jsonBody <|
+        Json.Encode.object (( "protocolVersion", Json.Encode.int protocolVersion ) :: fields)
 
 
 roundTransitionRequest : String -> String -> String -> String -> Int -> (Result Http.Error String -> Msg) -> Cmd Msg
@@ -16,11 +26,10 @@ roundTransitionRequest apiUrl authToken gameId endpoint expectedRevision toMsg =
         , headers = [ Http.header "Authorization" ("Bearer " ++ authToken) ]
         , url = apiUrl ++ "/" ++ endpoint
         , body =
-            Http.jsonBody <|
-                Json.Encode.object
-                    [ ( "gameId", Json.Encode.string gameId )
-                    , ( "expectedRevision", Json.Encode.int expectedRevision )
-                    ]
+            commandBody
+                [ ( "gameId", Json.Encode.string gameId )
+                , ( "expectedRevision", Json.Encode.int expectedRevision )
+                ]
         , expect = Http.expectString toMsg
         , timeout = Nothing
         , tracker = Nothing
@@ -54,12 +63,11 @@ turnCommandRequest apiUrl authToken gameId endpoint expectedRevision expectedTur
         , headers = [ Http.header "Authorization" ("Bearer " ++ authToken) ]
         , url = apiUrl ++ "/" ++ endpoint
         , body =
-            Http.jsonBody <|
-                Json.Encode.object
-                    [ ( "gameId", Json.Encode.string gameId )
-                    , ( "expectedRevision", Json.Encode.int expectedRevision )
-                    , ( "expectedTurnId", Json.Encode.int expectedTurnId )
-                    ]
+            commandBody
+                [ ( "gameId", Json.Encode.string gameId )
+                , ( "expectedRevision", Json.Encode.int expectedRevision )
+                , ( "expectedTurnId", Json.Encode.int expectedTurnId )
+                ]
         , expect = Http.expectString NoOpResult
         , timeout = Nothing
         , tracker = Nothing
@@ -93,29 +101,28 @@ deleteWord apiUrl authToken gameId wordId =
         , headers = [ Http.header "Authorization" ("Bearer " ++ authToken) ]
         , url = apiUrl ++ "/deleteWord"
         , body =
-            Http.jsonBody <|
-                Json.Encode.object
-                    [ ( "gameId", Json.Encode.string gameId )
-                    , ( "wordId", Json.Encode.string wordId )
-                    ]
+            commandBody
+                [ ( "gameId", Json.Encode.string gameId )
+                , ( "wordId", Json.Encode.string wordId )
+                ]
         , expect = Http.expectString NoOpResult
         , timeout = Nothing
         , tracker = Nothing
         }
 
 
-addWord : String -> String -> RequestId -> String -> Word -> Cmd Msg
-addWord apiUrl authToken requestId gameId word =
+addWord : String -> String -> RequestId -> String -> String -> String -> Cmd Msg
+addWord apiUrl authToken requestId gameId wordId text =
     Http.request
         { method = "POST"
         , headers = [ Http.header "Authorization" ("Bearer " ++ authToken) ]
         , url = apiUrl ++ "/addWord"
         , body =
-            Http.jsonBody <|
-                Json.Encode.object
-                    [ ( "gameId", Json.Encode.string gameId )
-                    , ( "word", wordEncoder word )
-                    ]
+            commandBody
+                [ ( "gameId", Json.Encode.string gameId )
+                , ( "wordId", Json.Encode.string wordId )
+                , ( "text", Json.Encode.string text )
+                ]
         , expect = Http.expectString (WordAdded requestId gameId)
         , timeout = Nothing
         , tracker = Nothing
@@ -129,11 +136,10 @@ kickPlayer apiUrl authToken userId gameId =
         , headers = [ Http.header "Authorization" ("Bearer " ++ authToken) ]
         , url = apiUrl ++ "/kickPlayer"
         , body =
-            Http.jsonBody <|
-                Json.Encode.object
-                    [ ( "userId", Json.Encode.string userId )
-                    , ( "gameId", Json.Encode.string gameId )
-                    ]
+            commandBody
+                [ ( "userId", Json.Encode.string userId )
+                , ( "gameId", Json.Encode.string gameId )
+                ]
         , expect = Http.expectString NoOpResult
         , timeout = Nothing
         , tracker = Nothing
@@ -147,11 +153,10 @@ joinGame apiUrl authToken requestId gameId username =
         , headers = [ Http.header "Authorization" ("Bearer " ++ authToken) ]
         , url = apiUrl ++ "/joinGame"
         , body =
-            Http.jsonBody <|
-                Json.Encode.object
-                    [ ( "gameId", Json.Encode.string gameId )
-                    , ( "username", Json.Encode.string username )
-                    ]
+            commandBody
+                [ ( "gameId", Json.Encode.string gameId )
+                , ( "displayName", Json.Encode.string username )
+                ]
         , expect = Http.expectJson (JoinedGame requestId gameId) joinedGameResponseDecoder
         , timeout = Nothing
         , tracker = Nothing
@@ -170,7 +175,7 @@ joinedGameResponseDecoder =
 findGame : String -> RequestId -> String -> Cmd Msg
 findGame apiUrl requestId gameCode =
     Http.get
-        { url = apiUrl ++ "/findGame?gameId=" ++ gameCode
+        { url = apiUrl ++ "/findGame?gameId=" ++ gameCode ++ "&protocolVersion=" ++ String.fromInt protocolVersion
         , expect = Http.expectJson (GameFound requestId gameCode) gameDecoder
         }
 
@@ -182,23 +187,17 @@ addedGameResponseDecoder =
         (Json.Decode.field "player" playerDecoder)
 
 
-createAddGameRequestBody : String -> String -> Game -> Http.Body
-createAddGameRequestBody clientRequestId username game =
-    Http.jsonBody <|
-        Json.Encode.object
-            [ ( "game", Game.Game.gameEncoder game )
-            , ( "username", Json.Encode.string username )
-            , ( "clientRequestId", Json.Encode.string clientRequestId )
-            ]
-
-
-addGame : String -> String -> RequestId -> String -> String -> Game -> Cmd Msg
-addGame apiUrl authToken requestId clientRequestId username game =
+addGame : String -> String -> RequestId -> String -> String -> Cmd Msg
+addGame apiUrl authToken requestId clientRequestId username =
     Http.request
         { method = "POST"
         , headers = [ Http.header "Authorization" ("Bearer " ++ authToken) ]
         , url = apiUrl ++ "/addGame"
-        , body = createAddGameRequestBody clientRequestId username game
+        , body =
+            commandBody
+                [ ( "displayName", Json.Encode.string username )
+                , ( "clientRequestId", Json.Encode.string clientRequestId )
+                ]
         , expect = Http.expectJson (GameAdded requestId) addedGameResponseDecoder
         , timeout = Nothing
         , tracker = Nothing

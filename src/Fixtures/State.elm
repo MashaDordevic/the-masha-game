@@ -12,15 +12,15 @@ emptyTestState =
 
 wordsList : List Word
 wordsList =
-    [ Word "desk" "p1" ""
-    , Word "keyboard" "p1" ""
-    , Word "computer" "p1" ""
-    , Word "orange" "p2" ""
-    , Word "mango" "p2" ""
-    , Word "apple" "p2" ""
-    , Word "glass" "p21" ""
-    , Word "cup" "p21" ""
-    , Word "plate" "p21" ""
+    [ Word "desk" "1" ""
+    , Word "keyboard" "1" ""
+    , Word "computer" "1" ""
+    , Word "orange" "2" ""
+    , Word "mango" "2" ""
+    , Word "apple" "2" ""
+    , Word "glass" "2-1" ""
+    , Word "cup" "2-1" ""
+    , Word "plate" "2-1" ""
     ]
 
 

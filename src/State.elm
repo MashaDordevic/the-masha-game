@@ -9,6 +9,7 @@ import Json.Decode
 import Player exposing (Player)
 import Request
 import Route exposing (Route)
+import Set exposing (Set)
 import Time
 import Url
 
@@ -25,21 +26,12 @@ type LocalUser
     | LocalWatcher Player
 
 
-type alias BetweenRoundsAnimation =
-    { revision : Int
-    , targetRound : Int
-    }
-
-
 type alias PlayingGameModel =
     { localUser : LocalUser
     , game : Game
-    , isOwner : Bool
     , wordInput : String
     , addWordRequest : Request.State ( RequestId, String ) String
-    , turnTimer : Int
-    , betweenRoundsAnimation : Maybe BetweenRoundsAnimation
-    , completedBetweenRoundsRevision : Maybe Int
+    , onlinePlayerIds : Set String
     , isStartConfirmationOpen : Bool
     , isStartRequestPending : Bool
     , startRequestError : Maybe String
@@ -85,6 +77,7 @@ type alias Model =
     , environment : String
     , apiUrl : String
     , serverTimeOffsetMs : Float
+    , now : Time.Posix
     , errors : Errors
     , isHelpDialogOpen : Bool
     , isDonateDialogOpen : Bool
@@ -105,6 +98,7 @@ type Msg
     | JoinGame
     | EnterGame
     | GameChanged Json.Decode.Value
+    | PresenceChanged (List String)
     | KickPlayer String
     | StartGame
     | CopyInviteLink
@@ -115,7 +109,6 @@ type Msg
     | CancelStartConfirmation
     | ConfirmStartPlaying
     | StartBetweenRoundsCompleted (Result Http.Error String)
-    | BetweenRoundsAnimationFinished Int
     | TransitionTick Time.Posix
     | DeleteWord String
     | QuitGame

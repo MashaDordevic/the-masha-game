@@ -1,18 +1,17 @@
 module Game.Gameplay exposing (..)
 
-import Dict
-import Game.Game exposing (Game, GameState)
-import Game.Status
+import Dict exposing (Dict)
+import Game.Game exposing (Game, GamePhase(..), GameState)
 import Game.Teams
-import Game.Words
-import Player exposing (Player)
+import Player exposing (Player, PlayerStatus(..))
+import Set exposing (Set)
 
 
 isRoundEnd : GameState -> Bool
 isRoundEnd gameState =
     case gameState.words.current of
         Just _ ->
-            Basics.False
+            False
 
         Nothing ->
             List.isEmpty gameState.words.next
@@ -20,96 +19,81 @@ isRoundEnd gameState =
 
 isLocalPlayersTurn : Game -> Player -> Bool
 isLocalPlayersTurn game player =
-    let
-        teamOnTurn =
-            game.state.teams.current
-
-        isLocPlayersTurn =
-            case teamOnTurn of
-                Just currentTeam ->
-                    List.member player currentTeam.players
-
-                Nothing ->
-                    False
-    in
-    isLocPlayersTurn
+    game.state.teams.current
+        |> Maybe.map (\team -> List.member player.id team.playerIds)
+        |> Maybe.withDefault False
 
 
-isPlayerOnwer : Game -> Player -> Bool
-isPlayerOnwer game player =
-    let
-        owner =
-            game.participants.players
-                |> Dict.toList
-                |> List.map Tuple.second
-                |> List.filter
-                    (\pl -> pl.isOwner)
-                |> List.head
-    in
-    case owner of
-        Just o ->
-            o.id == player.id
-
-        Nothing ->
-            False
+isOwner : Game -> Player -> Bool
+isOwner game player =
+    game.ownerId == player.id
 
 
-isExplaining : Game -> Player -> Basics.Bool
+isExplaining : Game -> Player -> Bool
 isExplaining game player =
+    game.state.teams.current
+        |> Maybe.andThen (\team -> List.head team.playerIds)
+        |> Maybe.map ((==) player.id)
+        |> Maybe.withDefault False
+
+
+explainer : Game -> Maybe Player
+explainer game =
+    game.state.teams.current
+        |> Maybe.andThen (\team -> List.head team.playerIds)
+        |> Maybe.andThen (\playerId -> Dict.get playerId game.participants.players)
+
+
+teamMembers : Game -> Game.Teams.Team -> List Player
+teamMembers game team =
+    Game.Teams.members game.participants.players team
+
+
+withPresence : String -> Set String -> Game -> Game
+withPresence localPlayerId onlineIds game =
     let
-        teamOnTurn =
-            game.state.teams.current
+        participants =
+            game.participants
+
+        players =
+            Dict.map
+                (\_ player ->
+                    { player
+                        | status =
+                            if player.id == localPlayerId || Set.member player.id onlineIds then
+                                Online
+
+                            else
+                                Offline
+                    }
+                )
+                participants.players
     in
-    case teamOnTurn of
-        Just currentTeam ->
-            case List.head currentTeam.players of
-                Just explainingUser ->
-                    explainingUser.id == player.id
-
-                Nothing ->
-                    False
-
-        Nothing ->
-            False
+    { game | participants = { participants | players = players } }
 
 
-nextRound : Game -> Game
-nextRound game =
-    let
-        newRound =
-            game.state.round + 1
+type Screen
+    = LobbyScreen
+    | AddingWordsScreen
+    | BetweenRoundsScreen Int
+    | PlayingScreen
+    | FinishedScreen
 
-        oldState =
-            game.state
 
-        newState =
-            case newRound of
-                0 ->
-                    game.state
+screen : Game -> Screen
+screen game =
+    case game.state.phase of
+        Lobby ->
+            LobbyScreen
 
-                1 ->
-                    let
-                        newTeams =
-                            Game.Teams.createTeams game.participants.players
+        AddingWords ->
+            AddingWordsScreen
 
-                        -- shuffle words
-                        newWords =
-                            Game.Words.failCurrentWord game.state.words
-                    in
-                    { oldState | teams = newTeams, words = newWords }
+        BetweenRounds ->
+            BetweenRoundsScreen (Maybe.withDefault (game.state.round + 1) game.state.targetRound)
 
-                _ ->
-                    let
-                        newWords =
-                            Game.Words.restartWords game.state.words
-                    in
-                    { oldState | words = newWords }
+        PlayingRound ->
+            PlayingScreen
 
-        newStatus =
-            if newRound == 4 then
-                Game.Status.Finished
-
-            else
-                game.status
-    in
-    { game | state = { newState | round = newRound }, status = newStatus }
+        GameFinished ->
+            FinishedScreen

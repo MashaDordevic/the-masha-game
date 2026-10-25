@@ -3,20 +3,27 @@
     ".read": false,
     ".write": false,
     "games": {
-      ".read": true,
+      ".read": true
+    },
+    "presence": {
       "$gameId": {
-        "participants": {
-          "players": {
-            "$playerId": {
-              "status": {
-                ".write": "auth != null && root.child('gameAuthorizations').child($gameId).child($playerId).val() === auth.uid"
-              }
-            }
+        ".read": true,
+        "$playerId": {
+          "$connectionId": {
+            ".write": "auth != null && root.child('gameAuthorizations').child($gameId).child($playerId).val() === auth.uid"
           }
         }
       }
     },
     "gameAuthorizations": {
+      ".read": false,
+      ".write": false
+    },
+    "joinCodes": {
+      ".read": false,
+      ".write": false
+    },
+    "createGameRequests": {
       ".read": false,
       ".write": false
     },

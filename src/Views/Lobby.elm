@@ -1,11 +1,12 @@
 module Views.Lobby exposing (..)
 
 import Dict exposing (Dict)
+import Game.Gameplay
 import Html exposing (Html, button, div, h1, h3, span, text)
 import Html.Attributes exposing (class, classList, disabled)
 import Html.Events exposing (onClick)
 import Player exposing (Player)
-import State exposing (LocalUser, Msg(..), PlayingGameModel)
+import State exposing (LocalUser(..), Msg(..), PlayingGameModel)
 import Views.PlayerKick exposing (canKickPlayer, kickPlayerButton)
 
 
@@ -38,8 +39,16 @@ lobbyView model =
         cantStartGame =
             Dict.size model.game.participants.players <= 1
 
+        isOwner =
+            case model.localUser of
+                LocalPlayer player ->
+                    Game.Gameplay.isOwner model.game player
+
+                LocalWatcher player ->
+                    Game.Gameplay.isOwner model.game player
+
         titleCopy =
-            if model.isOwner then
+            if isOwner then
                 "Waiting for players to join"
 
             else
@@ -55,11 +64,11 @@ lobbyView model =
                     [ text "Players" ]
                 , playersList
                     model.game.participants.players
-                    model.isOwner
+                    isOwner
                     model.localUser
                 ]
             ]
-        , if model.isOwner then
+        , if isOwner then
             button [ onClick StartGame, class "start-game", disabled cantStartGame ] [ text "start game" ]
 
           else
